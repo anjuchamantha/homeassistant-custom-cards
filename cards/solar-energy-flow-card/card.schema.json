@@ -107,6 +107,40 @@
         }
       },
       "additionalProperties": false
+    },
+    "energySummarySensor": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^sensor\\.[a-z0-9_]+$"
+        },
+        {
+          "type": "object",
+          "required": [
+            "entity"
+          ],
+          "properties": {
+            "entity": {
+              "type": "string",
+              "pattern": "^sensor\\.[a-z0-9_]+$"
+            },
+            "unit": {
+              "enum": [
+                "Wh",
+                "kWh",
+                "MWh"
+              ]
+            },
+            "mode": {
+              "enum": [
+                "increasing",
+                "net"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
     }
   },
   "properties": {
@@ -235,6 +269,48 @@
     "hours": {
       "type": "number",
       "deprecated": true
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "show": {
+          "type": "boolean"
+        },
+        "precision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6
+        },
+        "entities": {
+          "type": "object",
+          "minProperties": 1,
+          "properties": {
+            "solar": {
+              "$ref": "#/$defs/energySummarySensor"
+            },
+            "load": {
+              "$ref": "#/$defs/energySummarySensor"
+            },
+            "grid": {
+              "$ref": "#/$defs/energySummarySensor"
+            },
+            "grid_import": {
+              "$ref": "#/$defs/energySummarySensor"
+            },
+            "grid_export": {
+              "$ref": "#/$defs/energySummarySensor"
+            },
+            "battery_charge": {
+              "$ref": "#/$defs/energySummarySensor"
+            },
+            "battery_discharge": {
+              "$ref": "#/$defs/energySummarySensor"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

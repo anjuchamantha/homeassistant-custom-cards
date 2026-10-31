@@ -15,7 +15,7 @@ const context = vm.createContext({ HTMLElement: class {
       getElementById: key => get(key),
     };
     function get(key) {
-      if (!elements.has(key)) elements.set(key, {});
+      if (!elements.has(key)) elements.set(key, { querySelector: child => get(key + ' ' + child) });
       return elements.get(key);
     }
   }
@@ -189,4 +189,98 @@ test('group fill and extension are explicit, and raw mode preserves nulls', () =
   series.group_by.func = 'raw';
   assert.equal(card.seriesData(series)[1][1], null);
   assert.equal(card.seriesData(series).length, 3);
+});
+
+
+const summaryConfig = { ...config, summary: { entities: { solar: 'sensor.solar_energy' } } };
+function energyFixture(card, values, unit = 'kWh') {
+  card.date = vm.runInContext('new Date(2026, 0, 1, 12)', context);
+  const start = card.bounds().start;
+  card.summaryRange = { start, end: start + 6 * 3600000 };
+  card.summaryHistory = [values.map(([hour, state, attributes], index) => ({
+    ...(index === 0 ? { entity_id: 'sensor.solar_energy' } : {}), state: String(state),
+    last_updated: new Date(start + hour * 3600000).toISOString(),
+    attributes: { unit_of_measurement: unit, ...attributes },
+  }))];
+  return start;
+}
+
+test('energy summary uses counter change for the visible range, not lifetime value', () => {
+  const card = new Card(); card.setConfig(summaryConfig);
+  const start = energyFixture(card, [[0, 100], [2, 102], [4, 104], [6, 106]]);
+  assert.equal(card.energyTotal(card.summaryEntities[0]).value, 6);
+  card.updateSummary({ start: start + 2 * 3600000, end: start + 4 * 3600000 });
+  assert.equal(card.energyTotal(card.summaryEntities[0]).value, 2);
+  assert.equal(card.shadowRoot.querySelector('[data-energy="solar"] .summary-value').textContent, '2.00 kWh');
+});
+
+test('energy units are converted and zero consumption stays distinct from missing readings', () => {
+  const card = new Card(); card.setConfig(summaryConfig);
+  energyFixture(card, [[0, 2000], [6, 3500]], 'Wh');
+  assert.equal(card.energyTotal(card.summaryEntities[0]).value, 1.5);
+  energyFixture(card, [[0, 0.1], [6, 0.102]], 'MWh');
+  assert.ok(Math.abs(card.energyTotal(card.summaryEntities[0]).value - 2) < 1e-8);
+  energyFixture(card, [[0, 100]]);
+  assert.equal(card.energyTotal(card.summaryEntities[0]).value, 0);
+  energyFixture(card, [[1, 100], [6, 101]]);
+  assert.equal(card.energyTotal(card.summaryEntities[0]).value, null);
+  energyFixture(card, [[0, 100], [6, 'unavailable']]);
+  assert.equal(card.energyTotal(card.summaryEntities[0]).value, null);
+  energyFixture(card, [[0, 100], [6, 106]], 'W');
+  assert.match(card.energyTotal(card.summaryEntities[0]).reason, /unit/);
+});
+
+test('counter resets are reported, while net counters can decrease', () => {
+  const card = new Card(); card.setConfig(summaryConfig);
+  energyFixture(card, [[0, 100], [2, 105], [6, 2]]);
+  assert.match(card.energyTotal(card.summaryEntities[0]).reason, /reset/);
+  card.summaryEntities[0].mode = 'net';
+  assert.equal(card.energyTotal(card.summaryEntities[0]).value, -98);
+  energyFixture(card, [[0, 100, {last_reset:'2025-01-01'}], [6, 101, {last_reset:'2026-01-01'}]]);
+  assert.match(card.energyTotal(card.summaryEntities[0]).reason, /reset/);
+});
+
+test('energy history failure does not prevent the power chart loading', async () => {
+  const card = new Card(); card.setConfig(summaryConfig);
+  card.date = vm.runInContext('new Date(2026, 0, 1, 12)', context);
+  const paths = [];
+  card.hass = { callApi: async (_, path) => {
+    paths.push(path);
+    if (!path.includes('no_attributes=true')) throw new Error('energy offline');
+    return [];
+  } };
+  await flush();
+  assert.equal(card.ready, true);
+  assert.equal(card.error, '');
+  assert.match(card.summaryError, /energy offline/);
+  assert.equal(paths.length, 2);
+  assert.ok(paths.find(path => !path.includes('no_attributes=true')).includes('significant_changes_only=0'));
+});
+
+test('energy summary is opt-in, supports disabling, and validates sensor configuration', () => {
+  const card = new Card(); card.setConfig(config);
+  assert.equal(card.summaryEntities.length, 0);
+  assert.ok(!card.shadowRoot.innerHTML.includes('class="energy-summary"'));
+  card.setConfig({ ...summaryConfig, summary: { ...summaryConfig.summary, show: false } });
+  assert.equal(card.summaryEntities.length, 0);
+  assert.throws(() => card.setConfig({ ...config, summary: { show: true } }), /summary.entities/);
+  assert.throws(() => card.setConfig({ ...summaryConfig, summary: { entities: { solar: 'switch.invalid' } } }), /sensor/);
+  assert.throws(() => card.setConfig({ ...summaryConfig, summary: { entities: { solar: {entity:'sensor.energy', unit:'W'} } } }), /unit/);
+});
+
+test('stale energy history cannot overwrite the newly selected date', async () => {
+  const card = new Card(); card.setConfig(summaryConfig);
+  card.date = vm.runInContext('new Date(2026, 0, 1, 12)', context);
+  const pending = [];
+  card.hass = { callApi: (_, path) => path.includes('no_attributes=true')
+    ? Promise.resolve([]) : new Promise(resolve => pending.push(resolve)) };
+  await flush();
+  card.date = vm.runInContext('new Date(2026, 0, 2, 12)', context);
+  const current = card.load(); await flush();
+  pending[1]([[{ entity_id: 'sensor.solar_energy', state: '200', last_changed: '2026-01-02T00:00:00Z', attributes: {unit_of_measurement: 'kWh'} }]]);
+  await current;
+  pending[0]([[{ entity_id: 'sensor.solar_energy', state: '100', last_changed: '2026-01-01T00:00:00Z', attributes: {unit_of_measurement: 'kWh'} }]]);
+  await flush();
+  assert.equal(card.summaryHistory[0][0].state, '200');
+  assert.equal(card.summaryError, '');
 });

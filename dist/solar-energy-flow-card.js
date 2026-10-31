@@ -43,6 +43,11 @@ const ApexCharts = SolarEnergyCharts;
 /* global SolarEnergyCharts */
 const ENERGY_KEYS = ['solar', 'battery', 'grid', 'load'];
 const ENERGY_COLORS = ['#ffb300', '#26a69a', '#42a5f5', '#ab47bc'];
+const ENERGY_SUMMARY = {
+  solar: 'Solar generated', load: 'Home consumed', grid: 'Grid energy',
+  grid_import: 'Grid imported', grid_export: 'Grid exported',
+  battery_charge: 'Battery charged', battery_discharge: 'Battery discharged',
+};
 let energyChartId = 0;
 
 // Merge only data properties: YAML configuration must never modify object prototypes.
@@ -110,6 +115,23 @@ class SolarEnergyFlowCard extends HTMLElement {
       if (span / duration > 10000) throw new Error('group_by.duration produces more than 10000 buckets.');
       return energyMerge({ name: series.entity, color: ENERGY_COLORS[i % 4], type: 'line', opacity: 0.2 }, series);
     });
+    if (config.summary !== undefined && (!config.summary || typeof config.summary !== 'object' || Array.isArray(config.summary))) throw new Error('summary must be a mapping.');
+    const summary = config.summary || {};
+    if (summary.show !== undefined && typeof summary.show !== 'boolean') throw new Error('summary.show must be boolean.');
+    if (summary.precision !== undefined && (!Number.isInteger(summary.precision) || summary.precision < 0 || summary.precision > 6)) throw new Error('summary.precision must be between 0 and 6.');
+    if (summary.entities !== undefined && (!summary.entities || typeof summary.entities !== 'object' || Array.isArray(summary.entities))) throw new Error('summary.entities must be a mapping.');
+    this.summaryEntities = Object.entries(summary.entities || {}).map(([key, value]) => {
+      const item = typeof value === 'string' ? { entity: value } : value;
+      if (!Object.hasOwn(ENERGY_SUMMARY, key) || !item || !/^sensor\.[a-z0-9_]+$/.test(item.entity || '')) throw new Error('Use supported summary keys and sensor entity IDs.');
+      if (item.unit !== undefined && !['Wh', 'kWh', 'MWh'].includes(item.unit)) throw new Error('Summary unit must be Wh, kWh, or MWh.');
+      if (item.mode !== undefined && !['increasing', 'net'].includes(item.mode)) throw new Error('Summary mode must be increasing or net.');
+      return { key, label: ENERGY_SUMMARY[key], entity: item.entity, unit: item.unit, mode: item.mode || (key === 'grid' ? 'net' : 'increasing') };
+    });
+    if (summary.show === false) this.summaryEntities = [];
+    if (summary.show === true && !this.summaryEntities.length) throw new Error('Configure summary.entities to show energy totals.');
+    this.summaryHistory = [];
+    this.summaryError = '';
+    this.summaryRange = null;
     this.date = this.date || new Date();
     this.chartId = this.chartId || `solar-energy-${++energyChartId}`;
     if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
@@ -156,14 +178,30 @@ class SolarEnergyFlowCard extends HTMLElement {
     const path = `history/period/${encodeURIComponent(new Date(start).toISOString())}?end_time=${encodeURIComponent(new Date(end).toISOString())}&filter_entity_id=${encodeURIComponent(ids)}&minimal_response=true&no_attributes=true`;
     this.loading = true;
     this.error = '';
+    this.summaryHistory = [];
+    this.summaryError = '';
+    this.summaryRange = { start, end: Math.min(end, Date.now()) };
     this.render();
+    // Energy-counter history keeps attributes so unit changes and explicit resets are visible.
+    const summaryIds = [...new Set(this.summaryEntities.map(item => item.entity))].join(',');
+    const summaryPath = `history/period/${encodeURIComponent(new Date(start).toISOString())}?end_time=${encodeURIComponent(new Date(Math.min(end, Date.now())).toISOString())}&filter_entity_id=${encodeURIComponent(summaryIds)}&significant_changes_only=0`;
+    const summaryTask = this.summaryEntities.length && start < Date.now()
+      ? Promise.resolve().then(() => this._hass.callApi('GET', summaryPath)).then(history => {
+        if (!Array.isArray(history) || history.some(series => !Array.isArray(series))) throw new Error('Unexpected energy history response.');
+        return { history, error: '' };
+      }).catch(error => ({ history: [], error: `Energy history unavailable: ${error?.message || error}` }))
+      : Promise.resolve({ history: [], error: '' });
     try {
       const cached = this.cache.get(path);
       const history = this.config.cache && cached && Date.now() - cached.time < 30000
         ? cached.history : await this._hass.callApi('GET', path);
       if (requestId !== this.requestId) return;
       if (!Array.isArray(history) || history.some(series => !Array.isArray(series))) throw new Error('Unexpected history response.');
+      const summary = await summaryTask;
+      if (requestId !== this.requestId) return;
       this.history = history;
+      this.summaryHistory = summary.history;
+      this.summaryError = summary.error;
       if (this.config.cache) {
         this.cache.set(path, { history, time: Date.now() });
         if (this.cache.size > 8) this.cache.delete(this.cache.keys().next().value);
@@ -177,6 +215,58 @@ class SolarEnergyFlowCard extends HTMLElement {
     }
     this.loading = false;
     this.render();
+  }
+
+  energyTotal(item, range = this.summaryRange || this.bounds()) {
+    const end = Math.min(range.end, Date.now());
+    if (!(end > range.start)) return { value: null, reason: 'No elapsed time in range' };
+    if (this.summaryError) return { value: null, reason: this.summaryError };
+    const states = (this.summaryHistory || []).find(series => series[0]?.entity_id === item.entity) || [];
+    if (!states.length) return { value: null, reason: 'No recorded energy history' };
+    const units = { Wh: 0.001, kWh: 1, MWh: 1000 };
+    let unit = item.unit || states[0]?.attributes?.unit_of_measurement || this._hass?.states?.[item.entity]?.attributes?.unit_of_measurement;
+    let reset;
+    const points = states.map(state => {
+      if (!item.unit && state.attributes?.unit_of_measurement) unit = state.attributes.unit_of_measurement;
+      if (state.attributes && Object.hasOwn(state.attributes, 'last_reset')) reset = state.attributes.last_reset;
+      const raw = state.state;
+      const number = raw == null || String(raw).trim() === '' ? NaN : Number(raw);
+      return { t: new Date(state.last_updated || state.last_changed).getTime(),
+        v: Number.isFinite(number) && units[unit] ? number * units[unit] : null, unit, reset };
+    }).filter(point => Number.isFinite(point.t) && point.t <= end).sort((a, b) => a.t - b.t);
+    const baseline = points.filter(point => point.t <= range.start).at(-1);
+    if (!baseline) return { value: null, reason: 'No reading at start of range' };
+    const selected = [baseline, ...points.filter(point => point.t > range.start)];
+    const last = selected.at(-1);
+    if (!units[baseline.unit] || !units[last.unit]) return { value: null, reason: 'Energy unit must be Wh, kWh, or MWh' };
+    if (baseline.v === null || last.v === null) return { value: null, reason: 'Energy reading unavailable at range boundary' };
+    let previous = baseline;
+    for (const point of selected.slice(1)) {
+      if (point.reset !== previous.reset) return { value: null, reason: 'Counter reset in range' };
+      if (point.v !== null) {
+        if (item.mode !== 'net' && previous.v !== null && point.v < previous.v - 1e-9) return { value: null, reason: 'Counter decreased or reset in range' };
+        previous = point;
+      }
+    }
+    return { value: last.v - baseline.v, reason: '' };
+  }
+
+  updateSummary(range) {
+    if (range && Number.isFinite(range.start) && Number.isFinite(range.end) && range.end > range.start) {
+      const bounds = this.bounds();
+      this.summaryRange = { start: Math.max(bounds.start, range.start), end: Math.min(bounds.end, range.end, Date.now()) };
+    }
+    if (!this.summaryEntities?.length || !this.shadowRoot) return;
+    const caption = this.shadowRoot.querySelector('.summary-caption');
+    if (caption) caption.textContent = this.loading ? 'Energy · loading…' : 'Energy · selected time range';
+    for (const item of this.summaryEntities) {
+      const element = this.shadowRoot.querySelector(`[data-energy="${item.key}"]`);
+      if (!element) continue;
+      const result = this.loading || this.error ? { value: null, reason: this.error || 'Loading energy history' } : this.energyTotal(item);
+      element.querySelector('.summary-label').textContent = item.label;
+      element.querySelector('.summary-value').textContent = result.value === null ? '—' : `${result.value.toFixed(this.config.summary?.precision ?? 2)} kWh`;
+      element.querySelector('.summary-note').textContent = result.reason;
+    }
   }
 
   rawValues(entity) {
@@ -279,6 +369,17 @@ class SolarEnergyFlowCard extends HTMLElement {
       }).catch(() => {});
       return { xaxis: { min: start, max: end } };
     } });
+    if (!isBrush && this.summaryEntities.length) {
+      const renderId = this.renderId;
+      const sync = chart => {
+        if (renderId === this.renderId) this.updateSummary({ start: chart.w.globals.minX, end: chart.w.globals.maxX });
+      };
+      // Brush updates also trigger the main chart's updated event.
+      for (const event of ['mounted', 'updated', 'zoomed', 'scrolled']) {
+        const previous = options.chart.events[event];
+        options.chart.events[event] = (chart, ...args) => { sync(chart); if (typeof previous === 'function') previous(chart, ...args); };
+      }
+    }
     options.series = selected.map(series => ({ name: series.name.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character])), type: series.type, data: this.seriesData(series) }));
     options.xaxis = energyMerge(options.xaxis, { type: 'datetime', min: start, max: end });
     const values = options.series.flatMap(series => series.data.map(point => point[1])).filter(value => value !== null);
@@ -344,9 +445,14 @@ class SolarEnergyFlowCard extends HTMLElement {
       button,input{font:inherit;border:1px solid var(--divider-color,#ddd);border-radius:8px;background:var(--secondary-background-color,#f7f7f7);padding:7px 9px;color:var(--primary-text-color,inherit);min-width:0}
       button{cursor:pointer;flex-shrink:0}input{max-width:165px}button:focus-visible,input:focus-visible{outline:2px solid var(--primary-color,#03a9f4)}
       #chart,#brush{min-width:0}.status{font-size:.9rem;color:var(--secondary-text-color,#697586)}
+      .energy-summary{margin:10px 4px 16px}.summary-caption{font-size:.85rem;color:var(--secondary-text-color,#697586);margin:0 0 8px}
+      .summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:8px}
+      .summary-item{padding:10px 12px;border:1px solid var(--divider-color,#ddd);border-radius:10px;min-width:0}
+      .summary-label{font-size:.8rem;color:var(--secondary-text-color,#697586)}.summary-value{font-size:1.15rem;font-weight:600;margin-top:4px;font-variant-numeric:tabular-nums}
+      .summary-note{font-size:.75rem;color:var(--secondary-text-color,#697586);overflow-wrap:anywhere}.summary-note:empty{display:none}
       .apexcharts-tooltip,.apexcharts-menu{color:#222}.apexcharts-theme-dark{color:#eee}
       @media(max-width:400px){ha-card{padding:8px}.controls{gap:4px}button,input{padding:6px}input{width:130px}}
-    </style><ha-card><div class="head">${showTitle ? '<div class="title"></div>' : ''}<div class="controls"><button id="prev" aria-label="Previous day">‹</button><input id="date" aria-label="History date" type="date" value="${day}"><button id="next" aria-label="Next day">›</button><button id="today">Today</button></div></div><div class="status" role="status"></div><div id="chart"></div>${showBrush ? '<div id="brush"></div>' : ''}</ha-card>`;
+    </style><ha-card><div class="head">${showTitle ? '<div class="title"></div>' : ''}<div class="controls"><button id="prev" aria-label="Previous day">‹</button><input id="date" aria-label="History date" type="date" value="${day}"><button id="next" aria-label="Next day">›</button><button id="today">Today</button></div></div><div class="status" role="status"></div><div id="chart"></div>${this.summaryEntities.length ? `<section class="energy-summary" aria-label="Energy summary"><p class="summary-caption"></p><div class="summary-grid">${this.summaryEntities.map(item => `<div class="summary-item" data-energy="${item.key}"><div class="summary-label"></div><div class="summary-value"></div><div class="summary-note"></div></div>`).join('')}</div></section>` : ''}${showBrush ? '<div id="brush"></div>' : ''}</ha-card>`;
     const heading = this.shadowRoot.querySelector('.title');
     if (showTitle && heading) heading.textContent = title;
     const status = this.shadowRoot.querySelector('.status');
@@ -358,6 +464,7 @@ class SolarEnergyFlowCard extends HTMLElement {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(event.target.value)) return;
       this.date = new Date(`${event.target.value}T12:00:00`); this.load();
     };
+    this.updateSummary();
     if (this.ready && !this.loading && !this.error) this.mountCharts();
     else this.chartTask = (this.chartTask || Promise.resolve()).catch(() => {}).then(() => this.destroyCharts());
   }

@@ -1,6 +1,6 @@
 # Solar Energy Flow Card
 
-Date-selectable Home Assistant Recorder history for solar, battery, grid, and load power. This card draws a power history chart; it does not calculate energy totals or source-to-load allocation.
+Date-selectable Home Assistant Recorder history for solar, battery, grid, and load power. This card draws a power history chart and can summarize recorded cumulative energy helpers for the selected time range. It does not calculate source-to-load allocation.
 
 ## HACS installation
 
@@ -44,6 +44,53 @@ The default graph now matches the bundled ApexCharts example: smooth 1px lines, 
 All four sensors must report numeric **watts**. Values are plotted as reported, including negative values; no sign or unit conversion is performed. `hours` was previously unused and remains ignored; the card always shows one calendar day.
 
 Use the arrows, date field, and Today button to load a day. The day uses the browser's local timezone, which should match your intended Home Assistant timezone. Recorder and History must be enabled and retain the selected sensors. Unavailable or nonnumeric states become gaps. Five-minute buckets average numeric recorded samples; they are not time-weighted averages. Empty buckets remain gaps by default. No values are invented after the last sample when `extend_to: false`. This uses recent state history, not long-term statistics. Dates with no retained readings show an empty chart. To retry after an error, use a date control or Today. The chart refreshes on date selection, configuration, or page reload; it does not continuously poll live readings.
+
+## Energy summary
+
+Configure cumulative energy sensors to show a summary row between the main chart and the mini graph. See the [full energy summary example](examples/energy-summary.yaml). The existing graph configuration remains unchanged.
+
+```yaml
+summary:
+  show: true
+  precision: 2
+  entities:
+    solar: sensor.solar_energy
+    load: sensor.home_energy
+    grid: sensor.grid_energy
+    battery_charge: sensor.battery_charge_energy
+    battery_discharge: sensor.battery_discharge_energy
+```
+
+![Energy summary preview with synthetic readings](../../docs/images/energy-summary.png)
+
+These are **energy** helpers, not the graph's power sensors. Home Assistant Integral helpers are supported. Units are read from history attributes (or the current entity's attributes) and converted from Wh, kWh, or MWh into kWh. If needed, use an explicit unit for an individual helper:
+
+```yaml
+summary:
+  entities:
+    solar:
+      entity: sensor.solar_energy
+      unit: kWh
+      mode: increasing
+    grid:
+      entity: sensor.grid_energy
+      mode: net
+```
+
+Totals are the counter at the end of the selected range minus its value at the start, using the last recorded reading at or before each boundary. They are not lifetime totals and do not integrate the chart's grouped power samples. Changing the date, zoom, or mini graph selection updates the summaries. For today, the end is capped at the current time; values refresh when history is reloaded, like the main graph. Readings are not interpolated between counter updates, so boundary precision depends on helper update frequency. Integral helpers themselves estimate energy from power readings.
+
+The `grid` label is **Grid energy**, and defaults to `net` mode: negative changes remain negative. Use optional `grid_import` and `grid_export` keys only when you have separate cumulative counters for those directions. One net helper cannot supply both import and export totals. Other keys default to `increasing` mode. `net` permits decreases; `increasing` reports a detected counter decrease as unavailable. Explicit changes to `last_reset` make either mode unavailable for that range. The card does not guess consumption across resets.
+
+Missing history, unsupported units, unavailable boundary states, or detected resets display **—** with an explanation, rather than zero. A stable recorded counter can correctly show 0.00 kWh. Recorder must retain the energy helpers as well as the power sensors. Newly created helpers cannot backfill energy history from before they existed; the card does not use long-term statistics. An energy-history request failure leaves the power chart working.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `summary.show` | Enabled when entities are configured | Show the energy summary; `false` disables its history request and row |
+| `summary.precision` | `2` | Decimal places in kWh, from 0 to 6 |
+| `summary.entities` | None | Any of `solar`, `load`, `grid`, `grid_import`, `grid_export`, `battery_charge`, `battery_discharge`, mapped to a sensor ID or object |
+| Per-helper `entity` | Required for object syntax | Cumulative energy sensor ID |
+| Per-helper `unit` | Auto-detected | Explicit Wh, kWh, or MWh override |
+| Per-helper `mode` | `net` for `grid`, otherwise `increasing` | Whether decreases represent net energy or an invalid/reset counter |
 
 ## ApexCharts-style configuration
 

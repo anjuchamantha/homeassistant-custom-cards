@@ -1,0 +1,82 @@
+type: custom:solar-energy-flow-card
+section_mode: true
+grid_options:
+  columns: 24
+  rows: 11
+cache: false
+header:
+  show: false
+  title: Solar power history
+graph_span: 1d
+span:
+  start: day
+hours_12: true
+stacked: false
+experimental:
+  brush: true
+brush:
+  selection_span: 24h
+  apex_config:
+    chart:
+      height: 100
+summary:
+  show: true
+  precision: 2
+  entities:
+    solar: sensor.solar_energy
+    load: sensor.home_energy
+    grid: sensor.grid_energy
+    battery_charge: sensor.battery_charge_energy
+    battery_discharge: sensor.battery_discharge_energy
+all_series_config:
+  stroke_width: 1
+  curve: smooth
+  float_precision: 0
+  extend_to: false
+  group_by:
+    func: avg
+    duration: 5min
+    fill: "null"
+apex_config:
+  chart:
+    height: 550
+    zoom:
+      enabled: true
+      type: x
+    toolbar:
+      show: true
+      tools:
+        download: true
+        reset: true
+  legend:
+    position: bottom
+  yaxis:
+    title:
+      text: Power (W)
+    decimalsInFloat: 0
+  tooltip:
+    shared: true
+series:
+  - entity: sensor.inverter_pv_power
+    name: Solar (W)
+    color: "#ffb300"
+    type: area
+    opacity: 0.25
+    show:
+      in_brush: true
+  - entity: sensor.inverter_battery_power
+    name: Battery (W)
+    color: "#26a69a"
+    type: area
+    opacity: 0.2
+  - entity: sensor.grid_power
+    name: Grid (W)
+    color: "#42a5f5"
+    type: area
+    opacity: 0.3
+  - entity: sensor.home_load_power
+    name: Load (W)
+    color: "#ab47bc"
+    type: line
+    show:
+      in_brush: true

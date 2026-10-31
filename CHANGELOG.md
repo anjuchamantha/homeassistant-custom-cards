@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added optional selected-range energy summaries from cumulative energy helpers, with solar/load/grid and separate battery charge/discharge totals.
+- Added Wh/kWh/MWh conversion, explicit missing/reset explanations, zoom/brush synchronization, and a generic summary example.
+
+
 - Moved the 0 W baseline label to the right edge to keep it clear of left-axis tick labels.
 
 

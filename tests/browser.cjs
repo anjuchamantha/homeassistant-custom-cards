@@ -111,6 +111,57 @@ const http = require('node:http');
     await page.evaluate(() => window.card.chartTask);
     assert.equal(await page.locator('solar-energy-flow-card img').count(), 0);
     assert.equal(await page.evaluate(() => window.injected), undefined);
+    // Energy counters show selected-range consumption, and follow zoom and brush changes.
+    await page.evaluate(() => {
+      const powerApi = window.card._hass.callApi;
+      const entries = { solar: 'sensor.solar_energy', load: 'sensor.load_energy', grid: 'sensor.grid_energy',
+        battery_charge: 'sensor.battery_charge_energy', battery_discharge: 'sensor.battery_discharge_energy' };
+      window.card.hass = { callApi: async (method, path) => {
+        if (path.includes('no_attributes=true')) return powerApi(method, path);
+        const start = new Date(decodeURIComponent(path.split('?')[0].slice('history/period/'.length))).getTime();
+        return Object.values(entries).map((entity, index) => Array.from({ length: 25 }, (_, hour) => ({
+          entity_id: entity, state: String(100 + hour * (index + 1)),
+          last_changed: new Date(start + hour * 3600000).toISOString(),
+          attributes: { unit_of_measurement: 'kWh' },
+        })));
+      } };
+      window.card.date = new Date(2026, 0, 1, 12);
+      window.energySummaryConfig = { ...window.exampleConfig, summary: { entities: entries } };
+      window.card.setConfig(window.energySummaryConfig);
+    });
+    await page.waitForFunction(() => window.card.ready && !window.card.loading);
+    await page.evaluate(() => window.card.chartTask);
+    const solarSummary = page.locator('solar-energy-flow-card [data-energy="solar"] .summary-value');
+    assert.equal(await solarSummary.innerText(), '24.00 kWh');
+    assert.equal(await page.locator('solar-energy-flow-card .summary-item').count(), 5);
+    await page.evaluate(() => { const start = window.card.bounds().start; window.card.charts[0].zoomX(start + 6 * 3600000, start + 12 * 3600000); });
+    await page.waitForFunction(() => window.card.shadowRoot.querySelector('[data-energy="solar"] .summary-value').textContent === '6.00 kWh');
+    await page.evaluate(async () => {
+      const start = window.card.bounds().start;
+      await window.card.charts[1].updateOptions({ chart: { selection: { xaxis: { min: start + 12 * 3600000, max: start + 15 * 3600000 } } } }, false, false);
+    });
+    await page.waitForFunction(() => window.card.shadowRoot.querySelector('[data-energy="solar"] .summary-value').textContent === '3.00 kWh');
+    await page.locator('solar-energy-flow-card #chart .apexcharts-reset-icon').click();
+    await page.waitForFunction(() => window.card.shadowRoot.querySelector('[data-energy="solar"] .summary-value').textContent === '24.00 kWh');
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+    if (process.env.CARD_SCREENSHOT_DIR) {
+      await page.locator('solar-energy-flow-card').screenshot({ path: `${process.env.CARD_SCREENSHOT_DIR}/solar-card-summary-mobile.png` });
+      await page.setViewportSize({ width: 1200, height: 1100 });
+      await page.waitForFunction(() => window.card.shadowRoot.querySelector('#chart .apexcharts-svg').getBoundingClientRect().width > 900);
+      await page.locator('solar-energy-flow-card').screenshot({ path: `${process.env.CARD_SCREENSHOT_DIR}/solar-card-summary-desktop.png` });
+    }
+    // The user's disabled main-graph zoom/toolbar still permits the brush to drive summary totals.
+    await page.evaluate(() => window.card.setConfig({ ...window.energySummaryConfig,
+      apex_config: { chart: { zoom: { enabled: false }, selection: { enabled: false }, toolbar: { show: false } } },
+    }));
+    await page.waitForFunction(() => window.card.ready && !window.card.loading);
+    await page.evaluate(() => window.card.chartTask);
+    await page.evaluate(async () => {
+      const start = window.card.bounds().start;
+      await window.card.charts[1].updateOptions({ chart: { selection: { xaxis: { min: start + 6 * 3600000, max: start + 12 * 3600000 } } } }, false, false);
+    });
+    await page.waitForFunction(() => window.card.shadowRoot.querySelector('[data-energy="solar"] .summary-value').textContent === '6.00 kWh');
+    assert.equal(await page.locator('solar-energy-flow-card #chart .apexcharts-toolbar').count(), 0);
     // Multiple cards and their brush instances must remain independent.
     await page.evaluate(async () => {
       window.second = document.createElement('solar-energy-flow-card');
@@ -125,7 +176,7 @@ const http = require('node:http');
     assert.equal(await page.evaluate(() => window.card.chartId !== window.second.chartId), true);
     assert.equal(await page.evaluate(() => window.second.charts.length), 2);
     assert.deepEqual(failures, []);
-    console.log('Browser checks passed: desktop/mobile, zero baseline, title safety, zoom/reset, tooltip/export, brush, date changes, and reconnection.');
+    console.log('Browser checks passed: desktop/mobile, zero baseline, title safety, zoom/reset, tooltip/export, brush, selected-range energy summaries, date changes, and reconnection.');
   } finally {
     if (browser) await browser.close();
     await new Promise(resolve => server.close(resolve));
