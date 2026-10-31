@@ -1,0 +1,7 @@
+type: custom:solar-energy-flow-card
+title: Energy history
+entities:
+  solar: sensor.solar_power
+  battery: sensor.battery_power
+  grid: sensor.grid_power
+  load: sensor.home_load_power

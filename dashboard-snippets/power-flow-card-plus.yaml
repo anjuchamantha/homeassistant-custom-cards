@@ -1,0 +1,36 @@
+type: custom:power-flow-card-plus
+clickable_entities: true
+kilo_threshold: 1000
+entities:
+  solar:
+    entity: sensor.inverter_pv_power
+    name: Solar
+    secondary_info: {}
+    color_value: true
+    color_icon: true
+    use_metadata: false
+  battery:
+    entity: sensor.inverter_battery_power
+    state_of_charge: sensor.battery_state_of_charge
+    name: Battery
+    invert_state: true
+    display_state: one_way
+    color_value: true
+    use_metadata: true
+    color_icon: color_dynamically
+    color_circle: color_dynamically
+  home:
+    entity: sensor.home_load_power
+    name: Load
+    override_state: true
+    secondary_info: {}
+    color_icon: true
+    color_value: true
+  fossil_fuel_percentage:
+    secondary_info: {}
+  grid:
+    entity: sensor.grid_power
+    name: Grid
+    secondary_info: {}
+    color_icon: color_dynamically
+    color_circle: color_dynamically

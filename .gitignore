@@ -1,0 +1,17 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+secrets.yaml
+secrets.yml
+*.pem
+*.key
+*.p12
+*.pfx
+configuration.yaml
+.storage/
+local/
+# Development artifacts
+node_modules/
+.DS_Store
+*.log

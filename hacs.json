@@ -1,0 +1,6 @@
+{
+  "name": "Solar Energy Flow Card",
+  "filename": "solar-energy-flow-card.js",
+  "render_readme": true,
+  "homeassistant": "2025.10.0"
+}

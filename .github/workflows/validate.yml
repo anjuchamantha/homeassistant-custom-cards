@@ -1,0 +1,20 @@
+name: Validate card
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check cards/solar-energy-flow-card/solar-energy-flow-card.js
+      - run: node --check dist/solar-energy-flow-card.js
+      - run: node --test tests/card.test.cjs
+      - run: TZ=America/New_York node --test tests/card.test.cjs
+      - run: ruby -ryaml -e 'Dir["**/*.yaml"].each { |path| YAML.load_file(path) }'
+      - uses: hacs/action@main
+        with:
+          category: plugin

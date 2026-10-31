@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "type",
+    "entities"
+  ],
+  "properties": {
+    "type": {
+      "const": "custom:solar-energy-flow-card"
+    },
+    "title": {
+      "type": "string"
+    },
+    "entities": {
+      "type": "object",
+      "required": [
+        "solar",
+        "battery",
+        "grid",
+        "load"
+      ],
+      "properties": {
+        "solar": {
+          "type": "string",
+          "pattern": "^sensor\\.[a-z0-9_]+$"
+        },
+        "battery": {
+          "type": "string",
+          "pattern": "^sensor\\.[a-z0-9_]+$"
+        },
+        "grid": {
+          "type": "string",
+          "pattern": "^sensor\\.[a-z0-9_]+$"
+        },
+        "load": {
+          "type": "string",
+          "pattern": "^sensor\\.[a-z0-9_]+$"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

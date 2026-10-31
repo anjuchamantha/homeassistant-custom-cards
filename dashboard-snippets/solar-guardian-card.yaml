@@ -1,0 +1,147 @@
+# Add as a NEW Manual dashboard card. Requires HACS "Button Card".
+# Edit entity IDs below if yours differ. This card does not create helpers.
+type: custom:button-card
+show_name: false
+show_icon: false
+show_state: false
+update_timer: 2s
+tap_action:
+  action: none
+hold_action:
+  action: none
+variables:
+  pv_voltage: sensor.inverter_pv_voltage
+  pv_current: sensor.inverter_pv_current
+  utility_voltage: sensor.inverter_utility_input_voltage
+  utility_current: sensor.inverter_utility_input_current
+  battery_voltage: sensor.inverter_battery_voltage
+  battery_current: sensor.inverter_battery_current
+  battery_soc: sensor.battery_state_of_charge
+  output_voltage: sensor.inverter_ac_output_voltage
+  output_current: sensor.inverter_ac_output_current
+  bypass: sensor.inverter_utility_bypass_status
+styles:
+  card:
+    - padding: 12px
+    - border-radius: 22px
+    - cursor: default
+  grid:
+    - grid-template-areas: '"diagram"'
+    - grid-template-columns: 1fr
+    - grid-template-rows: auto
+  custom_fields:
+    diagram:
+      - width: 100%
+      - min-width: 0
+      - line-height: 0
+      - white-space: normal
+custom_fields:
+  diagram: |
+    [[[
+      const read = (key) => {
+        const raw = states[variables[key]]?.state;
+        if (raw == null || raw.trim() === '' ||
+            ['unknown', 'unavailable', 'none'].includes(raw)) return null;
+        const value = Number(raw);
+        return Number.isFinite(value) ? value : null;
+      };
+      const value = (n, unit, decimals = 2) =>
+        n === null ? '—' : `${n.toFixed(decimals)} ${unit}`;
+
+      const pvV = read('pv_voltage'), pvA = read('pv_current');
+      const utilityV = read('utility_voltage'), utilityA = read('utility_current');
+      const batteryV = read('battery_voltage'), batteryA = read('battery_current');
+      const outputV = read('output_voltage'), outputA = read('output_current');
+      const soc = read('battery_soc');
+      const mode = states[variables.bypass]?.state;
+      const modeText = mode === 'Bypass' ? 'Grid bypass' :
+        mode === 'Not bypass' ? 'Inverter supply' : 'Supply status unavailable';
+      const modeColor = mode === 'Bypass' ? '#4898ce' :
+        mode === 'Not bypass' ? '#53ad75' : '#919aa5';
+
+      // Exact branch rules from Solar Guardian's bundled UP HI profile.
+      const pvArrow = pvA !== null && pvA > 0.1;
+      const utilityArrow = utilityV !== null && utilityV > 50;
+      const loadArrow = outputV !== null && outputV > 50;
+      const batteryVisible = batteryV !== null && batteryV > 5;
+      const batteryIn = batteryVisible && batteryA !== null && batteryA <= 0;
+      const batteryOut = batteryVisible && batteryA !== null && batteryA > 0;
+      const batteryText = batteryA === null ? 'Current unavailable' :
+        batteryA > 0 ? 'Charging' : batteryA < 0 ? 'Discharging' : 'Zero current';
+
+      const icons = {
+        solar: '<path d="M-28 0H28L20 23H-20Z M-16 0L-12 23 M0 0V23 M16 0L12 23 M-24 11H24 M-10 30H10 M0 23V30"/><circle cx="0" cy="-18" r="7"/><path d="M0-33V-29 M0-7V-3 M-15-18H-11 M11-18H15 M-11-29L-8-26 M8-10L11-7 M11-29L8-26 M-8-10L-11-7"/>',
+        utility: '<path d="M0-30L-20 30 M0-30L20 30 M-12-12H12 M-20 4H20 M-26 20H26 M-12-12L14 20 M12-12L-14 20 M-7 30H7 M-19 4L-8 20 M19 4L8 20"/>',
+        battery: '<rect x="-24" y="-25" width="48" height="51" rx="6"/><path d="M-9-25V-31H9V-25 M-12-5H0 M-6-11V1 M8-5H18"/>',
+        home: '<path d="M-29-1L0-27L29-1 M-21-6V27H21V-6 M-7 27V7H7V27"/>'
+      };
+      const node = (x, y, title, color, icon, v, a, note) => `
+        <g transform="translate(${x} ${y})">
+          <text y="-104" class="port-title">${title}</text>
+          <circle r="79" fill="var(--card-background-color, #fff)"
+            stroke="${color}" stroke-width="3"/>
+          <g transform="translate(0 -28) scale(.65)" fill="none"
+            stroke="${color}" stroke-width="3.5" stroke-linecap="round"
+            stroke-linejoin="round">${icons[icon]}</g>
+          <text y="19" class="reading">${value(v, 'V')}</text>
+          <text y="49" class="current">${value(a, 'A')}</text>
+          <text y="111" class="note">${note}</text>
+        </g>`;
+      const arrow = (id, path, enabled) => enabled ? `
+        <path data-flow="${id}" d="${path}" class="flow"
+          marker-end="url(#sg-app-arrow)"/>` : '';
+      const socText = soc === null ? 'Inverter SOC —' : `Inverter SOC ${soc.toFixed(0)}%`;
+      const missing = [pvV, pvA, utilityV, utilityA, batteryV, batteryA, outputV, outputA]
+        .some(n => n === null);
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 720"
+        role="img" aria-label="Solar Guardian style inverter port diagram"
+        style="display:block;width:100%;height:auto">
+        <style>
+          text {font-family:Arial,sans-serif;text-anchor:middle;fill:var(--primary-text-color,#27313d)}
+          .port-title {font-size:27px;font-weight:600}
+          .reading {font-size:25px;font-weight:600}
+          .current {font-size:23px}
+          .note {font-size:18px;fill:var(--secondary-text-color,#697586)}
+          .flow {fill:none;stroke:#76be3d;stroke-width:4;stroke-dasharray:12 8;
+            stroke-linecap:round;animation:sg-app-flow 1.2s linear infinite}
+          @keyframes sg-app-flow {to {stroke-dashoffset:-40}}
+          @media (prefers-reduced-motion:reduce) {.flow {animation:none}}
+        </style>
+        <defs>
+          <marker id="sg-app-arrow" viewBox="0 0 12 12" refX="10" refY="6"
+            markerWidth="4" markerHeight="4" orient="auto">
+            <path d="M1 1L11 6L1 11" fill="none" stroke="#76be3d" stroke-width="2"/>
+          </marker>
+        </defs>
+        <text x="400" y="43" style="font-size:30px;font-weight:600">Inverter overview</text>
+        <text x="400" y="77" class="note">Solar Guardian port-status logic</text>
+
+        ${arrow('solar-in', 'M194 230C245 230 245 270 293 270', pvArrow)}
+        ${arrow('utility-in', 'M194 500C245 500 245 450 293 450', utilityArrow)}
+        ${arrow('battery-in', 'M606 230C555 230 555 270 507 270', batteryIn)}
+        ${arrow('battery-out', 'M507 270C555 270 555 230 606 230', batteryOut)}
+        ${arrow('load-out', 'M507 450C555 450 555 500 606 500', loadArrow)}
+
+        <rect x="305" y="204" width="190" height="320" rx="20"
+          fill="var(--secondary-background-color,#f0f3f6)" stroke="#aab5c1" stroke-width="2"/>
+        <rect x="325" y="220" width="150" height="7" rx="3" fill="#aab5c1"/>
+        <rect x="333" y="251" width="134" height="104" rx="9" fill="#23313d"/>
+        <path d="M349 292C358 266 367 266 376 292S394 318 403 292S421 266 430 292S448 318 455 292"
+          fill="none" stroke="#8bd253" stroke-width="3"/>
+        <text x="400" y="341" style="font-size:17px;fill:#e4edf4">INVERTER</text>
+        <circle cx="400" cy="386" r="7" fill="${modeColor}"/>
+        <text x="400" y="423" style="font-size:23px;font-weight:600">INVERTER</text>
+        <path d="M342 470H458 M342 481H458 M342 492H458" stroke="#aab5c1" stroke-width="3"/>
+
+        ${node(110,230,'Solar','#f6a000','solar',pvV,pvA,'PV input')}
+        ${node(110,500,'Utility','#4898ce','utility',utilityV,utilityA,'Charging current')}
+        ${node(690,230,'Battery','#43b7aa','battery',batteryV,batteryA,batteryText)}
+        ${node(690,500,'Load','#f08b43','home',outputV,outputA,'AC output')}
+
+        <text x="400" y="575" class="note">${socText}</text>
+        <text x="400" y="641" style="font-size:24px;font-weight:600;fill:${modeColor}">${modeText}</text>
+        <text x="400" y="675" class="note">Arrows show port status, not source-to-load watt allocation.</text>
+        <text x="400" y="704" class="note">${missing ? 'Some readings are unavailable.' : 'Utility arrow = AC present. At 0 A, battery arrow points inward.'}</text>
+      </svg>`;
+    ]]]
