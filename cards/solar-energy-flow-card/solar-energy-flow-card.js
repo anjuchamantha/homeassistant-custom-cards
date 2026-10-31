@@ -41,13 +41,6 @@ class SolarEnergyFlowCard extends HTMLElement {
     }
     if (config.experimental?.brush !== undefined && typeof config.experimental.brush !== 'boolean') throw new Error('experimental.brush must be boolean.');
     if (config.brush?.selection_span) energyDuration(config.brush.selection_span);
-    const timeline = this.config.brush?.timeline;
-    if (timeline?.show !== undefined && typeof timeline.show !== 'boolean') throw new Error('brush.timeline.show must be boolean.');
-    if (timeline?.history_days !== undefined && (!Number.isInteger(timeline.history_days) || timeline.history_days < 1 || timeline.history_days > 365)) {
-      throw new Error('brush.timeline.history_days must be an integer from 1 to 365.');
-    }
-    this.timelineOffset = Math.max(-(timeline?.history_days ?? 7) * 1440, Math.min(0, this.timelineOffset || 0));
-    this.timelineSelection = null;
     const span = energyDuration(this.config.graph_span);
     if (span > 7 * 86400000) throw new Error('graph_span must be at most 7d.');
     const defaults = { stroke_width: 1, curve: 'smooth', float_precision: 0, extend_to: false,
@@ -104,58 +97,13 @@ class SolarEnergyFlowCard extends HTMLElement {
     return `${y}-${m}-${d}`;
   }
 
-  bounds(offset = this.timelineOffset || 0) {
+  bounds() {
     const start = new Date(this.date); start.setHours(0, 0, 0, 0);
-    start.setMinutes(offset);
     const end = new Date(start);
     // One day follows calendar time, including daylight-saving transitions.
     if (['1d', '1day', '24h', '24hr'].includes(this.config.graph_span)) end.setDate(end.getDate() + 1);
     else end.setTime(start.getTime() + energyDuration(this.config.graph_span));
     return { start: start.getTime(), end: end.getTime() };
-  }
-
-  viewBounds() {
-    const { start, end } = this.bounds();
-    const selection = this.timelineSelection;
-    if (selection) {
-      const min = start + Math.max(0, Math.min(selection.min, end - start - 1));
-      return { min, max: Math.max(min + 1, Math.min(end, start + selection.max)) };
-    }
-    const width = this.config.experimental?.brush !== false && this.config.brush?.selection_span
-      ? energyDuration(this.config.brush.selection_span) : end - start;
-    return { min: start, max: Math.min(end, start + width) };
-  }
-
-  timelineText(offset) {
-    const { start, end } = this.bounds(offset);
-    const format = time => new Date(time).toLocaleString(undefined, {
-      month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: this.config.hours_12,
-    });
-    return `${format(start)} – ${format(end)}`;
-  }
-
-  async moveTimeline(value) {
-    const offset = Math.max(-(this.config.brush?.timeline?.history_days ?? 7) * 1440, Math.min(0, Number(value)));
-    if (!Number.isFinite(offset)) return;
-    const main = this.charts?.[0];
-    // Retain the main graph's zoom/brush selection as the overview moves to another day.
-    if (!this.loading && main && this.ready) {
-      const { start, end } = this.bounds();
-      const min = main.w.globals.minX, max = main.w.globals.maxX;
-      if (Number.isFinite(min) && Number.isFinite(max) && max > min && min >= start && max <= end) {
-        this.timelineSelection = { min: Math.max(0, min - start), max: Math.min(end - start, max - start) };
-      }
-    }
-    this.timelineOffset = offset;
-    await this.load();
-  }
-
-  selectDay(date) {
-    this.date = date;
-    this.date.setHours(0, 0, 0, 0);
-    this.timelineOffset = 0;
-    this.timelineSelection = null;
-    return this.load();
   }
 
   async load() {
@@ -251,7 +199,6 @@ class SolarEnergyFlowCard extends HTMLElement {
 
   chartOptions(isBrush = false) {
     const { start, end } = this.bounds();
-    const view = this.viewBounds();
     const visible = isBrush ? this.series.filter(series => series.show?.in_brush === true) : this.series;
     const selected = visible.length ? visible : this.series;
     const css = typeof getComputedStyle === 'function' ? getComputedStyle(this) : null;
@@ -283,7 +230,6 @@ class SolarEnergyFlowCard extends HTMLElement {
     options.chart.events = energyMerge(options.chart.events, { beforeResetZoom: () => {
       // Apex's brush keeps its old selection after toolbar reset unless it is reset too.
       const renderId = this.renderId;
-      this.timelineSelection = null;
       if (!isBrush) Promise.resolve().then(() => {
         if (renderId !== this.renderId) return;
         const overview = this.charts?.find(chart => chart.w.config.chart.id === `${this.chartId}-brush`);
@@ -292,7 +238,7 @@ class SolarEnergyFlowCard extends HTMLElement {
       return { xaxis: { min: start, max: end } };
     } });
     options.series = selected.map(series => ({ name: series.name.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character])), type: series.type, data: this.seriesData(series) }));
-    options.xaxis = energyMerge(options.xaxis, { type: 'datetime', min: isBrush ? start : view.min, max: isBrush ? end : view.max });
+    options.xaxis = energyMerge(options.xaxis, { type: 'datetime', min: start, max: end });
     const values = options.series.flatMap(series => series.data.map(point => point[1])).filter(value => value !== null);
     // Include zero even when every sample is positive or negative.
     if (!Array.isArray(options.yaxis)) {
@@ -305,8 +251,9 @@ class SolarEnergyFlowCard extends HTMLElement {
         borderColor: 'transparent', style: { color: text, background: 'transparent', fontSize: '11px' } } },
     ] });
     if (isBrush) {
+      const width = this.config.brush?.selection_span ? energyDuration(this.config.brush.selection_span) : end - start;
       options.chart.brush = { enabled: true, target: this.chartId, autoScaleYaxis: true };
-      options.chart.selection = { enabled: true, xaxis: view };
+      options.chart.selection = { enabled: true, xaxis: { min: start, max: Math.min(end, start + width) } };
       options.chart.toolbar = { show: false };
     }
     return options;
@@ -343,12 +290,10 @@ class SolarEnergyFlowCard extends HTMLElement {
   render() {
     if (!this.shadowRoot) return;
     this.renderId = (this.renderId || 0) + 1;
-    const day = this.dayString(new Date(this.bounds().start));
+    const day = this.dayString(this.date);
     const title = this.config.header?.title ?? this.config.title ?? '';
     const showTitle = this.config.header?.show !== false && title.trim() !== '';
     const showBrush = this.config.experimental?.brush !== false;
-    const showTimeline = showBrush && this.config.brush?.timeline?.show !== false;
-    const historyDays = this.config.brush?.timeline?.history_days ?? 7;
     this.shadowRoot.innerHTML = `<style>
       :host{display:block;min-width:0}ha-card{padding:12px;overflow:hidden}
       .head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px}
@@ -357,38 +302,20 @@ class SolarEnergyFlowCard extends HTMLElement {
       button,input{font:inherit;border:1px solid var(--divider-color,#ddd);border-radius:8px;background:var(--secondary-background-color,#f7f7f7);padding:7px 9px;color:var(--primary-text-color,inherit);min-width:0}
       button{cursor:pointer;flex-shrink:0}input{max-width:165px}button:focus-visible,input:focus-visible{outline:2px solid var(--primary-color,#03a9f4)}
       #chart,#brush{min-width:0}.status{font-size:.9rem;color:var(--secondary-text-color,#697586)}
-      .timeline{margin:8px 8px 0}.timeline label{display:block;font-size:.85rem;color:var(--secondary-text-color,#697586)}
-      .timeline-row{display:flex;align-items:center;gap:10px}.timeline input[type=range]{flex:1;width:100%;max-width:none;min-width:0;padding:0;min-height:36px;accent-color:var(--primary-color,#03a9f4);cursor:ew-resize}
-      .timeline-ends{display:flex;justify-content:space-between;font-size:.8rem;color:var(--secondary-text-color,#697586)}
-      .timeline output{display:block;font-size:.8rem;overflow-wrap:anywhere;min-height:1.4em}
       .apexcharts-tooltip,.apexcharts-menu{color:#222}.apexcharts-theme-dark{color:#eee}
       @media(max-width:400px){ha-card{padding:8px}.controls{gap:4px}button,input{padding:6px}input{width:130px}}
-    </style><ha-card><div class="head">${showTitle ? '<div class="title"></div>' : ''}<div class="controls"><button id="prev" aria-label="Previous day">‹</button><input id="date" aria-label="History date" type="date" value="${day}"><button id="next" aria-label="Next day">›</button><button id="today">Today</button></div></div><div class="status" role="status"></div><div id="chart"></div>${showBrush ? '<div id="brush"></div>' : ''}${showTimeline ? `<div class="timeline"><label for="timeline-slider">Browse previous days</label><div class="timeline-row"><input id="timeline-slider" type="range" min="${-historyDays * 1440}" max="0" step="15" value="${this.timelineOffset || 0}" aria-describedby="timeline-window"><button id="timeline-latest">Latest</button></div><div class="timeline-ends"><span>${historyDays} days earlier</span><span>Selected day</span></div><output id="timeline-window" for="timeline-slider"></output></div>` : ''}</ha-card>`;
+    </style><ha-card><div class="head">${showTitle ? '<div class="title"></div>' : ''}<div class="controls"><button id="prev" aria-label="Previous day">‹</button><input id="date" aria-label="History date" type="date" value="${day}"><button id="next" aria-label="Next day">›</button><button id="today">Today</button></div></div><div class="status" role="status"></div><div id="chart"></div>${showBrush ? '<div id="brush"></div>' : ''}</ha-card>`;
     const heading = this.shadowRoot.querySelector('.title');
     if (showTitle && heading) heading.textContent = title;
     const status = this.shadowRoot.querySelector('.status');
     if (status) status.textContent = this.loading ? 'Loading history…' : this.error || '';
-    this.shadowRoot.getElementById('prev').onclick = () => { const date = new Date(this.bounds().start); date.setDate(date.getDate() - 1); this.selectDay(date); };
-    this.shadowRoot.getElementById('next').onclick = () => { const date = new Date(this.bounds().start); date.setDate(date.getDate() + 1); this.selectDay(date); };
-    this.shadowRoot.getElementById('today').onclick = () => this.selectDay(new Date());
+    this.shadowRoot.getElementById('prev').onclick = () => { this.date.setDate(this.date.getDate() - 1); this.load(); };
+    this.shadowRoot.getElementById('next').onclick = () => { this.date.setDate(this.date.getDate() + 1); this.load(); };
+    this.shadowRoot.getElementById('today').onclick = () => { this.date = new Date(); this.load(); };
     this.shadowRoot.getElementById('date').onchange = event => {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(event.target.value)) return;
-      this.selectDay(new Date(`${event.target.value}T12:00:00`));
+      this.date = new Date(`${event.target.value}T12:00:00`); this.load();
     };
-    if (showTimeline) {
-      const slider = this.shadowRoot.getElementById('timeline-slider');
-      const output = this.shadowRoot.getElementById('timeline-window');
-      const preview = value => {
-        const text = this.timelineText(Number(value));
-        output.textContent = text;
-        slider.setAttribute('aria-valuetext', text);
-      };
-      preview(this.timelineOffset || 0);
-      // Preview while dragging; fetch only on release/keyboard commit, keeping the thumb stable.
-      slider.oninput = event => preview(event.target.value);
-      slider.onchange = event => this.moveTimeline(event.target.value);
-      this.shadowRoot.getElementById('timeline-latest').onclick = () => this.moveTimeline(0);
-    }
     if (this.ready && !this.loading && !this.error) this.mountCharts();
     else this.chartTask = (this.chartTask || Promise.resolve()).catch(() => {}).then(() => this.destroyCharts());
   }

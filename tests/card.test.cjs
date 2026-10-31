@@ -15,7 +15,7 @@ const context = vm.createContext({ HTMLElement: class {
       getElementById: key => get(key),
     };
     function get(key) {
-      if (!elements.has(key)) elements.set(key, { setAttribute(name, value) { this[name] = value; } });
+      if (!elements.has(key)) elements.set(key, {});
       return elements.get(key);
     }
   }
@@ -189,81 +189,4 @@ test('group fill and extension are explicit, and raw mode preserves nulls', () =
   series.group_by.func = 'raw';
   assert.equal(card.seriesData(series)[1][1], null);
   assert.equal(card.seriesData(series).length, 3);
-});
-
-
-test('timeline slider requests older history and preserves the selected main graph window', async () => {
-  const card = new Card(); card.setConfig({ ...config, brush: { selection_span: '6h' } });
-  card.date = vm.runInContext('new Date(2026, 9, 31, 12)', context);
-  const original = card.bounds();
-  const requests = [];
-  card.hass = { callApi: async (_, path) => { requests.push(path); return []; } };
-  await flush();
-  card.charts = [{ w: { globals: { minX: original.start + 3600000, maxX: original.start + 4 * 3600000 } } }];
-  await card.moveTimeline(-1440);
-  const earlier = card.bounds();
-  assert.equal(new Date(earlier.start).getDate(), 30);
-  const view = card.chartOptions().xaxis;
-  assert.equal(view.min, earlier.start + 3600000);
-  assert.equal(view.max, earlier.start + 4 * 3600000);
-  assert.equal(card.chartOptions(true).xaxis.min, earlier.start);
-  assert.equal(card.chartOptions(true).chart.selection.xaxis.min, view.min);
-  assert.ok(requests.at(-1).includes(encodeURIComponent(new Date(earlier.start).toISOString())));
-  card.charts = [];
-  await card.moveTimeline(0);
-  assert.equal(card.bounds().start, original.start);
-  assert.equal(card.viewBounds().max - card.viewBounds().min, 3 * 3600000);
-});
-
-test('timeline previews do not fetch until release; range is bounded and date navigation resets it', async () => {
-  const card = new Card(); card.setConfig(config);
-  card.date = vm.runInContext('new Date(2026, 9, 31, 12)', context);
-  let requests = 0;
-  card.hass = { callApi: async () => { requests++; return []; } };
-  await flush();
-  const slider = card.shadowRoot.getElementById('timeline-slider');
-  slider.oninput({ target: { value: '-1440' } });
-  assert.equal(requests, 1);
-  assert.match(card.shadowRoot.getElementById('timeline-window').textContent, /30/);
-  await slider.onchange({ target: { value: '-1440' } });
-  assert.equal(requests, 2);
-  assert.equal(card.timelineOffset, -1440);
-  await card.moveTimeline(-999999);
-  assert.equal(card.timelineOffset, -7 * 1440);
-  await card.selectDay(vm.runInContext('new Date(2026, 9, 31, 12)', context));
-  assert.equal(card.timelineOffset, 0);
-  assert.equal(card.timelineSelection, null);
-});
-
-test('timeline can be disabled and validates lookback settings', () => {
-  const card = new Card(); card.setConfig({ ...config, brush: { timeline: { show: false } } });
-  assert.ok(!card.shadowRoot.innerHTML.includes('id="timeline-slider"'));
-  card.setConfig({ ...config, experimental: { brush: false } });
-  assert.ok(!card.shadowRoot.innerHTML.includes('id="timeline-slider"'));
-  for (const history_days of [0, -1, 1.5, 366, '7']) {
-    assert.throws(() => card.setConfig({ ...config, brush: { timeline: { history_days } } }), /history_days/);
-  }
-});
-
-test('timeline calendar-day shifts preserve local hour across daylight saving', () => {
-  const card = new Card(); card.setConfig(config);
-  card.date = vm.runInContext('new Date(2026, 2, 9, 12)', context);
-  const before = card.bounds(-1440);
-  assert.equal(new Date(before.start).getDate(), 8);
-  assert.equal(new Date(before.start).getHours(), 0);
-  assert.equal(new Date(before.end).getHours(), 0);
-  assert.equal((before.end - before.start) / 3600000, process.env.TZ === 'America/New_York' ? 23 : 24);
-});
-
-
-test('timeline ignores a chart range from the previous overview during rapid navigation', async () => {
-  const card = new Card(); card.setConfig({ ...config, brush: { selection_span: '6h' } });
-  card.date = vm.runInContext('new Date(2026, 9, 31, 12)', context);
-  card.hass = { callApi: async () => [] }; await flush();
-  const original = card.bounds();
-  card.timelineOffset = -1440;
-  card.timelineSelection = { min: 0, max: 6 * 3600000 };
-  card.charts = [{ w: { globals: { minX: original.start, maxX: original.start + 6 * 3600000 } } }];
-  await card.moveTimeline(-2880);
-  assert.equal(card.viewBounds().max - card.viewBounds().min, 6 * 3600000);
 });

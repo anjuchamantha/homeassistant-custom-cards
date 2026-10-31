@@ -2,8 +2,9 @@
 
 ## Unreleased
 
-- Added a separate timeline slider beneath the brush to scroll the entire overview into earlier hours/days, fetching older Recorder history on release.
-- Preserved the main graph's selected range during timeline navigation; added date-range previews, keyboard support, a Latest button, and configurable lookback (seven days by default).
+- Removed the separate cross-day timeline slider; retained the brush overview and date controls.
+
+
 
 
 - Made the heading optional: omit `title`, set it empty, or use `header.show: false`.

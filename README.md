@@ -4,7 +4,7 @@ Reusable Home Assistant Lovelace cards and dashboard snippets for energy and sma
 
 ## Solar Energy Flow Card
 
-A date-selectable chart for solar, battery, grid, and load power history, with optional title, a dashed 0 W baseline, smooth areas, shared tooltips, zoom/export controls, a brush overview, and a separate slider for browsing earlier days. The ApexCharts engine is bundled locally; no separate chart installation is required. Install this repository as a HACS custom **Dashboard** repository. See the [installation guide and configuration options](cards/solar-energy-flow-card/README.md).
+A date-selectable chart for solar, battery, grid, and load power history, with optional title, a dashed 0 W baseline, smooth areas, shared tooltips, zoom/export controls, and a brush overview. The ApexCharts engine is bundled locally; no separate chart installation is required. Install this repository as a HACS custom **Dashboard** repository. See the [installation guide and configuration options](cards/solar-energy-flow-card/README.md).
 
 The installable file is `dist/solar-energy-flow-card.js`; editable source is under `cards/solar-energy-flow-card/`. Build it with `npm run build`. Both the original `entities:` shorthand and the [ApexCharts-style example](cards/solar-energy-flow-card/examples/apexcharts-style.yaml) are supported.
 
