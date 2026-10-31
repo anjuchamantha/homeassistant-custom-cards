@@ -41,9 +41,28 @@ An omitted or empty `title` hides the heading. `header.show: false` hides it eve
 
 The default graph now matches the bundled ApexCharts example: smooth 1px lines, translucent solar/battery/grid areas, a load line, five-minute averages with gaps, a shared tooltip, 12-hour labels, zoom/pan/reset/export, and a 100px solar/load brush overview. A dashed, labeled **0 W** annotation is always included. Your existing `entities:` configuration continues to work.
 
-All four sensors must report numeric **watts**. Values are plotted as reported, including negative values; no sign or unit conversion is performed. `hours` was previously unused and remains ignored; the card always shows one calendar day.
+All four sensors must report numeric **watts**. Values are plotted as reported, including negative values; no sign or unit conversion is performed. `hours` was previously unused and remains ignored; the card defaults to a one-day overview.
 
-Use the arrows, date field, and Today button to load a day. The day uses the browser's local timezone, which should match your intended Home Assistant timezone. Recorder and History must be enabled and retain the selected sensors. Unavailable or nonnumeric states become gaps. Five-minute buckets average numeric recorded samples; they are not time-weighted averages. Empty buckets remain gaps by default. No values are invented after the last sample when `extend_to: false`. This uses recent state history, not long-term statistics. Dates with no retained readings show an empty chart. To retry after an error, use a date control or Today. The chart refreshes on date selection, configuration, or page reload; it does not continuously poll live readings.
+Use the arrows, date field, and Today button to load a day. The day uses the browser's local timezone, which should match your intended Home Assistant timezone. Recorder and History must be enabled and retain the selected sensors. Unavailable or nonnumeric states become gaps. Five-minute buckets average numeric recorded samples; they are not time-weighted averages. Empty buckets remain gaps by default. No values are invented after the last sample when `extend_to: false`. This uses recent state history, not long-term statistics. Dates with no retained readings show an empty chart. To retry after an error, use a date control or Today. The chart refreshes on date selection, timeline-slider release, configuration, or page reload; it does not continuously poll live readings.
+
+## Browse previous days with the bottom slider
+
+A separate **Browse previous days** slider sits below the mini graph. Drag it left to move the mini graph's entire timeline into earlier hours/days. The date-range label previews the requested window; release the thumb to load its history. The main graph follows while preserving its selected brush/zoom range. The slider supports keyboard arrow keys in 15-minute steps, Home for the earliest window, and End for the anchor window.
+
+**Latest** returns to the day you started from. **Today** returns to today. Choosing a date or using the top previous/next-day buttons resets the slider's anchor to that chosen day. The default lookback is seven calendar days before the anchor; it can be changed without downloading the whole history at once. Only the displayed overview range is fetched on release. Available readings depend on Recorder retention, so choosing older dates can show an empty graph.
+
+```yaml
+brush:
+  selection_span: 24h
+  timeline:
+    show: true
+    history_days: 7
+  apex_config:
+    chart:
+      height: 100
+```
+
+This slider moves the overview itself; the mini graph's existing handles still control the main graph's selected time range. It is enabled by default with the brush. Set `brush.timeline.show: false` to hide only the slider, or `experimental.brush: false` to hide both.
 
 ## ApexCharts-style configuration
 
@@ -109,13 +128,15 @@ series:
 | --- | --- | --- |
 | `header.show` | Title present | Show the optional heading; date controls stay visible |
 | `header.title` | `title` or empty | Plain text heading |
-| `graph_span` | `1d` | Time range starting at the selected day's midnight, up to `7d`; `1d`/`24h` respect calendar-day DST |
+| `graph_span` | `1d` | Overview time range, up to `7d`; starts at the selected midnight or the slider offset; `1d`/`24h` respect calendar-day DST |
 | `span.start` | `day` | Only `day` is supported; use the date selector to choose the day |
 | `hours_12` | `true` | 12-hour time labels and tooltips; set `false` for 24-hour time |
 | `stacked` | `false` | Stack the plotted series |
 | `cache` | `false` | Reuse up to eight history responses for 30 seconds when enabled |
 | `experimental.brush` | `true` | Show the range-selection overview |
 | `brush.selection_span` | Entire range | Initial brush selection, e.g. `6h` or `24h` |
+| `brush.timeline.show` | `true` | Show a separate slider beneath the overview to browse prior days |
+| `brush.timeline.history_days` | `7` | Slider lookback before the selected anchor date, integer from 1 to 365; data remains limited by Recorder retention |
 | `brush.apex_config` | 100px height | ApexCharts options for the overview |
 | `apex_config` | See defaults above | ApexCharts 3.54.1 options for the main chart, including height, toolbar, legend, y-axis, annotations, tooltip, and grid |
 | `series` | Four `entities` series | One to 24 series definitions |

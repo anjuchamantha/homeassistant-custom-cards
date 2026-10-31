@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added a separate timeline slider beneath the brush to scroll the entire overview into earlier hours/days, fetching older Recorder history on release.
+- Preserved the main graph's selected range during timeline navigation; added date-range previews, keyboard support, a Latest button, and configurable lookback (seven days by default).
+
+
 - Made the heading optional: omit `title`, set it empty, or use `header.show: false`.
 - Replaced the basic canvas plot with locally bundled ApexCharts 3.54.1 (MIT), smooth area/line styling, zoom/pan/reset/export, shared tooltips, and a brush overview.
 - Added a dashed, labeled 0 W baseline and automatic bounds including zero.

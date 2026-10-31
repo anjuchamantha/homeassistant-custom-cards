@@ -15,6 +15,9 @@ stacked: false
 experimental:
   brush: true
 brush:
+  timeline:
+    show: true
+    history_days: 7
   selection_span: 24h
   apex_config:
     chart:

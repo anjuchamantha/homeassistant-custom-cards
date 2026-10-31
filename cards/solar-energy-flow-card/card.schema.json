@@ -219,6 +219,22 @@
         },
         "apex_config": {
           "type": "object"
+        },
+        "timeline": {
+          "type": "object",
+          "properties": {
+            "show": {
+              "type": "boolean",
+              "default": true
+            },
+            "history_days": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 365,
+              "default": 7
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

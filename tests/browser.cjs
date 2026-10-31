@@ -33,15 +33,19 @@ const http = require('node:http');
       card.setConfig(window.exampleConfig);
       document.body.append(card);
       card.date = new Date(2026, 0, 1, 12);
-      const history = Object.entries(entities).map(([key, entity], index) => {
-        const start = new Date(2026, 0, 1).getTime();
+      const makeHistory = start => Object.entries(entities).map(([key, entity], index) => {
         return Array.from({ length: 1440 }, (_, minute) => ({
           ...(minute === 0 ? { entity_id: entity } : {}),
           state: String(key === 'battery' ? 500 * Math.sin(minute / 70) : Math.max(0, (index + 1) * 180 + Math.sin(minute / 40) * 160)),
           last_changed: new Date(start + minute * 60000).toISOString(),
         }));
       });
-      card.hass = { callApi: async () => history };
+      window.historyRequests = [];
+      card.hass = { callApi: async (_, path) => {
+        window.historyRequests.push(path);
+        const start = new Date(decodeURIComponent(path.split('?')[0].slice('history/period/'.length))).getTime();
+        return makeHistory(start);
+      } };
     });
     await page.waitForFunction(() => window.card.charts?.length === 2 && window.card.shadowRoot.querySelectorAll('.apexcharts-svg').length === 2);
     await page.evaluate(() => window.card.chartTask);
@@ -89,6 +93,40 @@ const http = require('node:http');
     if (process.env.CARD_SCREENSHOT_DIR) {
       await page.locator('solar-energy-flow-card').screenshot({ path: `${process.env.CARD_SCREENSHOT_DIR}/solar-card-mobile.png` });
     }
+    // The separate slider moves the overview into prior days while keeping a six-hour main window.
+    await page.evaluate(() => window.card.setConfig({ ...window.exampleConfig, brush: { selection_span: '6h' } }));
+    await page.waitForFunction(() => window.card.ready && !window.card.loading);
+    await page.evaluate(() => window.card.chartTask);
+    const anchor = await page.evaluate(() => window.card.bounds().start);
+    const slider = page.locator('solar-energy-flow-card #timeline-slider');
+    const beforePreview = await page.evaluate(() => window.historyRequests.length);
+    await slider.evaluate(input => { input.value = '-1440'; input.dispatchEvent(new Event('input')); });
+    assert.equal(await page.evaluate(() => window.historyRequests.length), beforePreview);
+    await slider.evaluate(input => input.dispatchEvent(new Event('change')));
+    await page.waitForFunction(() => window.card.timelineOffset === -1440 && window.card.ready && !window.card.loading);
+    await page.evaluate(() => window.card.chartTask);
+    const moved = await page.evaluate(() => ({
+      start: window.card.bounds().start,
+      main: [window.card.charts[0].w.globals.minX, window.card.charts[0].w.globals.maxX],
+      brush: [window.card.charts[1].w.globals.minX, window.card.charts[1].w.globals.maxX],
+      samples: window.card.seriesData(window.card.series[0]).filter(point => point[1] !== null).length,
+      request: window.historyRequests.at(-1),
+    }));
+    assert.ok(moved.start < anchor);
+    assert.equal(moved.main[1] - moved.main[0], 6 * 3600000);
+    assert.equal(moved.brush[0], moved.start);
+    assert.equal(moved.main[0], moved.start);
+    assert.ok(moved.samples > 0);
+    assert.ok(moved.request.includes(encodeURIComponent(new Date(moved.start).toISOString())));
+    await slider.focus(); await slider.press('Home');
+    await page.waitForFunction(() => window.card.timelineOffset === -7 * 1440 && window.card.ready && !window.card.loading);
+    await page.evaluate(() => window.card.chartTask);
+    await page.locator('solar-energy-flow-card #timeline-latest').click();
+    await page.waitForFunction(() => window.card.timelineOffset === 0 && window.card.ready && !window.card.loading);
+    await page.evaluate(() => window.card.chartTask);
+    assert.equal(await page.evaluate(() => window.card.bounds().start), anchor);
+    assert.equal(await page.evaluate(() => window.card.charts[0].w.globals.maxX - window.card.charts[0].w.globals.minX), 6 * 3600000);
+    assert.equal(await page.locator('solar-energy-flow-card #date').inputValue(), '2026-01-01');
     // Disable brush, reconfigure as series, navigate, and detach/reconnect safely.
     await page.evaluate(() => window.card.setConfig({
       series: Object.values(window.exampleConfig.entities).map((entity, index) => ({ entity, type: index === 3 ? 'line' : 'area', show: { in_brush: index === 0 } })),
@@ -97,6 +135,7 @@ const http = require('node:http');
     await page.waitForFunction(() => window.card.ready && !window.card.loading);
     await page.evaluate(() => window.card.chartTask);
     assert.equal(await page.locator('solar-energy-flow-card #brush').count(), 0);
+    assert.equal(await page.locator('solar-energy-flow-card #timeline-slider').count(), 0);
     await page.locator('solar-energy-flow-card #prev').click();
     await page.waitForFunction(() => window.card.ready && !window.card.loading);
     await page.evaluate(() => window.card.chartTask);
@@ -125,7 +164,7 @@ const http = require('node:http');
     assert.equal(await page.evaluate(() => window.card.chartId !== window.second.chartId), true);
     assert.equal(await page.evaluate(() => window.second.charts.length), 2);
     assert.deepEqual(failures, []);
-    console.log('Browser checks passed: desktop/mobile, zero baseline, title safety, zoom/reset, tooltip/export, brush, date changes, and reconnection.');
+    console.log('Browser checks passed: desktop/mobile, zero baseline, title safety, zoom/reset, tooltip/export, brush, cross-day timeline slider, date changes, and reconnection.');
   } finally {
     if (browser) await browser.close();
     await new Promise(resolve => server.close(resolve));
