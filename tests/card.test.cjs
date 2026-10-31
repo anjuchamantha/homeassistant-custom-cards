@@ -2,6 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const { execFileSync } = require('node:child_process');
 const source = fs.readFileSync('cards/solar-energy-flow-card/solar-energy-flow-card.js', 'utf8');
 let Card;
 const context = vm.createContext({ HTMLElement: class {
@@ -10,7 +11,7 @@ const context = vm.createContext({ HTMLElement: class {
     const elements = new Map();
     this.shadowRoot = {
       innerHTML: '',
-      querySelector: key => key === 'canvas' ? null : get(key),
+      querySelector: key => ['#chart', '#brush'].includes(key) ? null : get(key),
       getElementById: key => get(key),
     };
     function get(key) {
@@ -32,7 +33,7 @@ test('configuration can be repeated; dynamic strings are rendered as text', () =
   assert.ok(!card.shadowRoot.innerHTML.includes(title));
   card.error = title;
   card.render();
-  assert.equal(card.shadowRoot.querySelector('.error').textContent, title);
+  assert.equal(card.shadowRoot.querySelector('.status').textContent, title);
   assert.ok(!card.shadowRoot.innerHTML.includes(title));
   assert.throws(() => card.setConfig({ entities: {} }), /sensor entity IDs/);
 });
@@ -91,5 +92,101 @@ test('failures do not retry on every hass update; explicit reload recovers', asy
 });
 
 test('HACS distribution matches source', () => {
-  assert.equal(fs.readFileSync('dist/solar-energy-flow-card.js', 'utf8'), source);
+  execFileSync(process.execPath, ['scripts/build.cjs', '--check']);
+});
+
+
+test('title is absent by default, empty or hidden; explicit titles remain supported', () => {
+  const card = new Card();
+  for (const extra of [{}, { title: '' }, { title: 'Hidden', header: { show: false } }]) {
+    card.setConfig({ ...config, ...extra });
+    assert.ok(!card.shadowRoot.innerHTML.includes('class="title"'));
+  }
+  card.setConfig({ ...config, header: { title: 'My chart', show: true } });
+  assert.ok(card.shadowRoot.innerHTML.includes('class="title"'));
+  assert.equal(card.shadowRoot.querySelector('.title').textContent, 'My chart');
+});
+
+test('Apex options preserve styles, tooltips, zero annotation, and isolated brush IDs', () => {
+  const card = new Card();
+  card.setConfig({ ...config, hours_12: false, apex_config: { chart: { height: 420 },
+    annotations: { yaxis: [{ y: 500 }] } }, brush: { selection_span: '6h' } });
+  const options = card.chartOptions();
+  assert.equal(options.chart.height, 420);
+  assert.equal(options.series[0].type, 'area');
+  assert.equal(options.stroke.width[0], 1);
+  assert.equal(options.stroke.curve[0], 'smooth');
+  assert.equal(options.fill.opacity[0], 0.25);
+  assert.equal(options.xaxis.labels.format, 'HH:mm');
+  assert.equal(options.tooltip.shared, true);
+  assert.equal(options.annotations.yaxis[1].y, 0);
+  assert.equal(options.annotations.yaxis[1].strokeDashArray, 6);
+  const brush = card.chartOptions(true);
+  assert.equal(brush.series.length, 2);
+  assert.equal(brush.chart.brush.target, options.chart.id);
+  assert.notEqual(brush.chart.id, options.chart.id);
+  assert.equal(brush.chart.selection.xaxis.max - brush.chart.selection.xaxis.min, 6 * 3600000);
+  const another = new Card(); another.setConfig(config);
+  assert.notEqual(another.chartId, card.chartId);
+});
+
+test('five-minute buckets align across series and preserve gaps and the end of recorded data', () => {
+  const card = new Card(); card.setConfig(config);
+  card.date = vm.runInContext('new Date(2026, 0, 1, 12)', context);
+  const start = card.bounds().start;
+  card.history = [[
+    { entity_id: 'sensor.solar', state: '10', last_changed: new Date(start).toISOString() },
+    { state: '30', last_changed: new Date(start + 60000).toISOString() },
+    { state: '50', last_changed: new Date(start + 600000).toISOString() },
+  ]];
+  const points = card.seriesData(card.series[0]);
+  assert.equal(points[0][1], 20);
+  assert.equal(points[1][1], null);
+  assert.equal(points[2][1], 50);
+  assert.equal(points[3][1], null);
+  assert.equal(points.length, card.seriesData(card.series[1]).length);
+});
+
+test('series YAML supports overrides and raw gaps; invalid settings fail before requesting data', () => {
+  const card = new Card();
+  card.setConfig({ series: [{ entity: 'sensor.solar', name: 'PV', color: '#ffb300', type: 'area', opacity: 0.4 }],
+    all_series_config: { stroke_width: 2, group_by: { duration: '10min' } }, experimental: { brush: false } });
+  assert.equal(card.series[0].group_by.duration, '10min');
+  assert.equal(card.chartOptions().stroke.width[0], 2);
+  assert.ok(!card.shadowRoot.innerHTML.includes('id="brush"'));
+  assert.throws(() => card.setConfig({ ...config, all_series_config: { group_by: { duration: '0min' } } }), /positive/);
+  assert.throws(() => card.setConfig({ ...config, all_series_config: { group_by: { duration: '1ms' } } }), /10000/);
+  assert.throws(() => card.setConfig({ ...config, series: [] }), /between/);
+  assert.throws(() => card.setConfig({ series: [{ entity: 'sensor.solar', opacity: 2 }] }), /opacity/);
+});
+
+test('history cache is opt-in and reuses a response on explicit reload', async () => {
+  const card = new Card(); card.setConfig({ ...config, cache: true });
+  let calls = 0;
+  card.hass = { callApi: async () => { calls++; return []; } };
+  await flush(); await card.load();
+  assert.equal(calls, 1);
+  card.config.cache = false; await card.load();
+  assert.equal(calls, 2);
+});
+
+test('group fill and extension are explicit, and raw mode preserves nulls', () => {
+  const card = new Card(); card.setConfig(config);
+  card.date = vm.runInContext('new Date(2026, 0, 1, 12)', context);
+  const start = card.bounds().start;
+  card.history = [[
+    { entity_id: 'sensor.solar', state: '10', last_changed: new Date(start).toISOString() },
+    { state: 'unavailable', last_changed: new Date(start + 60000).toISOString() },
+    { state: '30', last_changed: new Date(start + 600000).toISOString() },
+  ]];
+  const series = card.series[0];
+  series.group_by.fill = 'last';
+  assert.equal(card.seriesData(series)[1][1], 10);
+  assert.equal(card.seriesData(series)[3][1], null);
+  series.extend_to = 'end';
+  assert.equal(card.seriesData(series).at(-1)[1], 30);
+  assert.equal(card.seriesData(series).at(-1)[0], card.bounds().end);
+  series.group_by.func = 'raw';
+  assert.equal(card.seriesData(series)[1][1], null);
+  assert.equal(card.seriesData(series).length, 3);
 });

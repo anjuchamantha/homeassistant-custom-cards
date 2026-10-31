@@ -10,11 +10,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - run: node scripts/build.cjs --check
       - run: node --check cards/solar-energy-flow-card/solar-energy-flow-card.js
       - run: node --check dist/solar-energy-flow-card.js
       - run: node --test tests/card.test.cjs
       - run: TZ=America/New_York node --test tests/card.test.cjs
       - run: ruby -ryaml -e 'Dir["**/*.yaml"].each { |path| YAML.load_file(path) }'
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
       - uses: hacs/action@main
         with:
           category: plugin

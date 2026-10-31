@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Made the heading optional: omit `title`, set it empty, or use `header.show: false`.
+- Replaced the basic canvas plot with locally bundled ApexCharts 3.54.1 (MIT), smooth area/line styling, zoom/pan/reset/export, shared tooltips, and a brush overview.
+- Added a dashed, labeled 0 W baseline and automatic bounds including zero.
+- Added ApexCharts-style series configuration, five-minute sample averaging with null gaps, per-series styling, 12/24-hour time, chart/brush options, and responsive date controls.
+- Preserved existing `entities` configuration; added a complete ApexCharts-style example, schema, browser tests, and distribution build checks.
+
+
 - Initial reusable repository layout.
 - Added Solar Energy Flow Card package and generic configuration example.
 - Replaced device-specific entity IDs with generic examples and completed the MIT license.

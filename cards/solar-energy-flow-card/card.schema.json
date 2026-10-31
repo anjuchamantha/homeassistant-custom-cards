@@ -2,15 +2,134 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "required": [
-    "type",
-    "entities"
+    "type"
   ],
+  "anyOf": [
+    {
+      "required": [
+        "entities"
+      ]
+    },
+    {
+      "required": [
+        "series"
+      ]
+    }
+  ],
+  "$defs": {
+    "seriesOptions": {
+      "type": "object",
+      "properties": {
+        "entity": {
+          "type": "string",
+          "pattern": "^sensor\\.[a-z0-9_]+$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "color": {
+          "type": "string",
+          "pattern": "^#[a-fA-F0-9]{3}(?:[a-fA-F0-9]{3})?$"
+        },
+        "type": {
+          "enum": [
+            "line",
+            "area"
+          ]
+        },
+        "opacity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "stroke_width": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "curve": {
+          "enum": [
+            "smooth",
+            "straight",
+            "stepline"
+          ]
+        },
+        "float_precision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "extend_to": {
+          "enum": [
+            false,
+            "now",
+            "end"
+          ]
+        },
+        "group_by": {
+          "type": "object",
+          "properties": {
+            "func": {
+              "enum": [
+                "avg",
+                "min",
+                "max",
+                "sum",
+                "first",
+                "last",
+                "diff",
+                "median",
+                "raw"
+              ]
+            },
+            "duration": {
+              "type": "string",
+              "pattern": "^\\d+(?:\\.\\d+)?\\s*(ms|s|sec|m|min|h|hr|d|day)$"
+            },
+            "fill": {
+              "enum": [
+                "null",
+                "zero",
+                "last"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "show": {
+          "type": "object",
+          "properties": {
+            "in_brush": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
   "properties": {
     "type": {
       "const": "custom:solar-energy-flow-card"
     },
     "title": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "header": {
+      "type": "object",
+      "properties": {
+        "show": {
+          "type": "boolean"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
     },
     "entities": {
       "type": "object",
@@ -39,7 +158,84 @@
         }
       },
       "additionalProperties": false
+    },
+    "series": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 24,
+      "items": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/seriesOptions"
+          },
+          {
+            "required": [
+              "entity"
+            ]
+          }
+        ]
+      }
+    },
+    "all_series_config": {
+      "$ref": "#/$defs/seriesOptions"
+    },
+    "graph_span": {
+      "type": "string",
+      "pattern": "^\\d+(?:\\.\\d+)?\\s*(ms|s|sec|m|min|h|hr|d|day)$"
+    },
+    "span": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "const": "day"
+        }
+      },
+      "additionalProperties": false
+    },
+    "hours_12": {
+      "type": "boolean"
+    },
+    "stacked": {
+      "type": "boolean"
+    },
+    "cache": {
+      "type": "boolean"
+    },
+    "experimental": {
+      "type": "object",
+      "properties": {
+        "brush": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "brush": {
+      "type": "object",
+      "properties": {
+        "selection_span": {
+          "type": "string",
+          "pattern": "^\\d+(?:\\.\\d+)?\\s*(ms|s|sec|m|min|h|hr|d|day)$"
+        },
+        "apex_config": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    "apex_config": {
+      "type": "object"
+    },
+    "section_mode": {
+      "type": "boolean"
+    },
+    "grid_options": {
+      "type": "object"
+    },
+    "hours": {
+      "type": "number",
+      "deprecated": true
     }
   },
-  "additionalProperties": true
+  "additionalProperties": false
 }
