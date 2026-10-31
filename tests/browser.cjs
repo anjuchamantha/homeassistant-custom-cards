@@ -45,6 +45,7 @@ const http = require('node:http');
     });
     await page.waitForFunction(() => window.card.charts?.length === 2 && window.card.shadowRoot.querySelectorAll('.apexcharts-svg').length === 2);
     await page.evaluate(() => window.card.chartTask);
+    await page.evaluate(() => { window.baseDesktopHeight = window.card.getBoundingClientRect().height; });
     assert.equal(await page.locator('solar-energy-flow-card .title').count(), 0);
     assert.equal(await page.locator('solar-energy-flow-card .status').innerText(), '');
     const baseline = page.locator('solar-energy-flow-card .apexcharts-yaxis-annotations line').first();
@@ -89,6 +90,7 @@ const http = require('node:http');
     if (process.env.CARD_SCREENSHOT_DIR) {
       await page.locator('solar-energy-flow-card').screenshot({ path: `${process.env.CARD_SCREENSHOT_DIR}/solar-card-mobile.png` });
     }
+    await page.evaluate(() => { window.baseMobileHeight = window.card.getBoundingClientRect().height; });
     // Disable brush, reconfigure as series, navigate, and detach/reconnect safely.
     await page.evaluate(() => window.card.setConfig({
       series: Object.values(window.exampleConfig.entities).map((entity, index) => ({ entity, type: index === 3 ? 'line' : 'area', show: { in_brush: index === 0 } })),
@@ -134,6 +136,8 @@ const http = require('node:http');
     const solarSummary = page.locator('solar-energy-flow-card [data-energy="solar"] .summary-value');
     assert.equal(await solarSummary.innerText(), '24.00 kWh');
     assert.equal(await page.locator('solar-energy-flow-card .summary-item').count(), 5);
+    assert.ok(await page.evaluate(() => Math.abs(window.card.getBoundingClientRect().height - window.baseMobileHeight) < 2));
+    assert.ok(await page.evaluate(() => window.card.shadowRoot.querySelector('.energy-summary').getBoundingClientRect().bottom <= window.card.shadowRoot.querySelector('#chart').getBoundingClientRect().top));
     await page.evaluate(() => { const start = window.card.bounds().start; window.card.charts[0].zoomX(start + 6 * 3600000, start + 12 * 3600000); });
     await page.waitForFunction(() => window.card.shadowRoot.querySelector('[data-energy="solar"] .summary-value').textContent === '6.00 kWh');
     await page.evaluate(async () => {
@@ -146,8 +150,16 @@ const http = require('node:http');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     if (process.env.CARD_SCREENSHOT_DIR) {
       await page.locator('solar-energy-flow-card').screenshot({ path: `${process.env.CARD_SCREENSHOT_DIR}/solar-card-summary-mobile.png` });
-      await page.setViewportSize({ width: 1200, height: 1100 });
-      await page.waitForFunction(() => window.card.shadowRoot.querySelector('#chart .apexcharts-svg').getBoundingClientRect().width > 900);
+    }
+    await page.setViewportSize({ width: 1200, height: 1100 });
+    await page.waitForFunction(() => window.card.shadowRoot.querySelector('#chart .apexcharts-svg').getBoundingClientRect().width > 900 && window.card.shadowRoot.querySelector('#brush .apexcharts-svg').getBoundingClientRect().width > 900 && window.card.charts[0].w.config.chart.height === 550);
+    assert.ok(await page.evaluate(() => Math.abs(window.card.getBoundingClientRect().height - window.baseDesktopHeight) < 2));
+    assert.ok(await page.evaluate(() => {
+      const summary = window.card.shadowRoot.querySelector('.energy-summary').getBoundingClientRect();
+      const controls = window.card.shadowRoot.querySelector('.controls').getBoundingClientRect();
+      return summary.left >= controls.right && summary.bottom <= controls.bottom + 1;
+    }));
+    if (process.env.CARD_SCREENSHOT_DIR) {
       await page.locator('solar-energy-flow-card').screenshot({ path: `${process.env.CARD_SCREENSHOT_DIR}/solar-card-summary-desktop.png` });
     }
     // The user's disabled main-graph zoom/toolbar still permits the brush to drive summary totals.

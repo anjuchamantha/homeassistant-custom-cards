@@ -43,6 +43,7 @@ const ApexCharts = SolarEnergyCharts;
 /* global SolarEnergyCharts */
 const ENERGY_KEYS = ['solar', 'battery', 'grid', 'load'];
 const ENERGY_COLORS = ['#ffb300', '#26a69a', '#42a5f5', '#ab47bc'];
+const ENERGY_SUMMARY_SHORT = { solar: 'Solar', load: 'Home', grid: 'Grid', grid_import: 'Import', grid_export: 'Export', battery_charge: 'Charge', battery_discharge: 'Discharge' };
 const ENERGY_SUMMARY = {
   solar: 'Solar generated', load: 'Home consumed', grid: 'Grid energy',
   grid_import: 'Grid imported', grid_export: 'Grid exported',
@@ -150,7 +151,7 @@ class SolarEnergyFlowCard extends HTMLElement {
   }
 
   connectedCallback() { if (this.config) this.render(); }
-  disconnectedCallback() { this.renderId = (this.renderId || 0) + 1; this.destroyCharts(); }
+  disconnectedCallback() { this.layoutObserver?.disconnect(); this.renderId = (this.renderId || 0) + 1; this.destroyCharts(); }
   getCardSize() { return Math.ceil((this.config?.apex_config?.chart?.height || 550) / 50) + 3; }
   getGridOptions() { return { columns: 24, rows: 11, min_columns: 6, min_rows: 6 }; }
 
@@ -263,9 +264,11 @@ class SolarEnergyFlowCard extends HTMLElement {
       const element = this.shadowRoot.querySelector(`[data-energy="${item.key}"]`);
       if (!element) continue;
       const result = this.loading || this.error ? { value: null, reason: this.error || 'Loading energy history' } : this.energyTotal(item);
-      element.querySelector('.summary-label').textContent = item.label;
+      element.querySelector('.summary-label').textContent = ENERGY_SUMMARY_SHORT[item.key];
       element.querySelector('.summary-value').textContent = result.value === null ? '—' : `${result.value.toFixed(this.config.summary?.precision ?? 2)} kWh`;
       element.querySelector('.summary-note').textContent = result.reason;
+      element.title = `${item.label}: ${result.value === null ? result.reason : element.querySelector('.summary-value').textContent}`;
+      element.setAttribute('aria-label', element.title);
     }
   }
 
@@ -329,6 +332,31 @@ class SolarEnergyFlowCard extends HTMLElement {
     return result;
   }
 
+  summaryChartHeight(height) {
+    if (!this.summaryEntities.length || typeof height !== 'number') return height;
+    const row = this.shadowRoot?.querySelector('.header-row')?.getBoundingClientRect?.();
+    const controls = this.shadowRoot?.querySelector('.controls')?.getBoundingClientRect?.();
+    // A wrapped compact summary uses chart space, keeping the card's total height unchanged.
+    const extra = row && controls ? Math.max(0, row.height - controls.height) : 0;
+    return Math.max(1, height - extra);
+  }
+
+  observeSummaryLayout() {
+    this.layoutObserver?.disconnect();
+    if (!this.summaryEntities.length || typeof ResizeObserver === 'undefined') return;
+    const renderId = this.renderId;
+    this.layoutObserver = new ResizeObserver(() => {
+      if (renderId !== this.renderId) return;
+      const chart = this.charts?.[0];
+      const height = this.summaryChartHeight(this.config.apex_config?.chart?.height ?? 550);
+      if (chart && typeof height === 'number' && Math.abs(Number(chart.w.config.chart.height) - height) > 0.5) {
+        chart.updateOptions({ chart: { height } }, false, false).catch(() => {});
+      }
+    });
+    const row = this.shadowRoot.querySelector('.header-row');
+    if (row) this.layoutObserver.observe(row);
+  }
+
   chartOptions(isBrush = false) {
     const { start, end } = this.bounds();
     const visible = isBrush ? this.series.filter(series => series.show?.in_brush === true) : this.series;
@@ -358,6 +386,7 @@ class SolarEnergyFlowCard extends HTMLElement {
       noData: { text: 'No recorded history for this date' },
     }, isBrush ? this.config.brush?.apex_config : this.config.apex_config);
     // Identity, history data, and date boundaries belong to this card, not raw Apex options.
+    if (!isBrush) options.chart.height = this.summaryChartHeight(options.chart.height);
     options.chart.id = isBrush ? `${this.chartId}-brush` : this.chartId;
     options.chart.events = energyMerge(options.chart.events, { beforeResetZoom: () => {
       // Apex's brush keeps its old selection after toolbar reset unless it is reset too.
@@ -422,6 +451,7 @@ class SolarEnergyFlowCard extends HTMLElement {
         await chart.render();
       }
       if (renderId !== this.renderId || this.isConnected === false) this.destroyCharts();
+      else this.observeSummaryLayout();
     }).catch(error => {
       this.destroyCharts();
       if (renderId !== this.renderId) return;
@@ -432,27 +462,32 @@ class SolarEnergyFlowCard extends HTMLElement {
 
   render() {
     if (!this.shadowRoot) return;
+    this.layoutObserver?.disconnect();
     this.renderId = (this.renderId || 0) + 1;
     const day = this.dayString(this.date);
     const title = this.config.header?.title ?? this.config.title ?? '';
     const showTitle = this.config.header?.show !== false && title.trim() !== '';
     const showBrush = this.config.experimental?.brush !== false;
+    const summaryMarkup = this.summaryEntities.length ? `<section class="energy-summary" aria-label="Energy summary for selected time range"><p class="summary-caption"></p><div class="summary-grid">${this.summaryEntities.map(item => `<div class="summary-item" data-energy="${item.key}" tabindex="0"><div class="summary-label"></div><div class="summary-value"></div><div class="summary-note"></div></div>`).join('')}</div></section>` : '';
     this.shadowRoot.innerHTML = `<style>
       :host{display:block;min-width:0}ha-card{padding:12px;overflow:hidden}
-      .head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px}
-      .title{font-size:1.2rem;font-weight:500;flex:1 1 100%;overflow-wrap:anywhere}
+      .head{display:flex;flex-direction:column;gap:8px;margin-bottom:8px}.header-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+      .title{font-size:1.2rem;font-weight:500;overflow-wrap:anywhere}
       .controls{display:flex;justify-content:flex-end;align-items:center;gap:6px;flex:1;min-width:0}
       button,input{font:inherit;border:1px solid var(--divider-color,#ddd);border-radius:8px;background:var(--secondary-background-color,#f7f7f7);padding:7px 9px;color:var(--primary-text-color,inherit);min-width:0}
       button{cursor:pointer;flex-shrink:0}input{max-width:165px}button:focus-visible,input:focus-visible{outline:2px solid var(--primary-color,#03a9f4)}
       #chart,#brush{min-width:0}.status{font-size:.9rem;color:var(--secondary-text-color,#697586)}
-      .energy-summary{margin:10px 4px 16px}.summary-caption{font-size:.85rem;color:var(--secondary-text-color,#697586);margin:0 0 8px}
-      .summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:8px}
-      .summary-item{padding:10px 12px;border:1px solid var(--divider-color,#ddd);border-radius:10px;min-width:0}
-      .summary-label{font-size:.8rem;color:var(--secondary-text-color,#697586)}.summary-value{font-size:1.15rem;font-weight:600;margin-top:4px;font-variant-numeric:tabular-nums}
-      .summary-note{font-size:.75rem;color:var(--secondary-text-color,#697586);overflow-wrap:anywhere}.summary-note:empty{display:none}
+      .header-row:has(.energy-summary) .controls{flex:0 1 auto}
+      .energy-summary{flex:1 1 350px;max-width:550px;min-width:0;margin-left:auto;overflow-x:auto}
+      .summary-grid{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(62px,1fr);gap:6px}
+      .summary-item{min-width:0;text-align:right;line-height:1.25;border-radius:3px}
+      .summary-label{font-size:10px;color:var(--secondary-text-color,#697586);white-space:nowrap}
+      .summary-value{font-size:12px;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--primary-text-color,inherit)}
+      .summary-caption,.summary-note{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+      .summary-item:focus-visible{outline:2px solid var(--primary-color,#03a9f4);outline-offset:-2px}
       .apexcharts-tooltip,.apexcharts-menu{color:#222}.apexcharts-theme-dark{color:#eee}
       @media(max-width:400px){ha-card{padding:8px}.controls{gap:4px}button,input{padding:6px}input{width:130px}}
-    </style><ha-card><div class="head">${showTitle ? '<div class="title"></div>' : ''}<div class="controls"><button id="prev" aria-label="Previous day">‹</button><input id="date" aria-label="History date" type="date" value="${day}"><button id="next" aria-label="Next day">›</button><button id="today">Today</button></div></div><div class="status" role="status"></div><div id="chart"></div>${this.summaryEntities.length ? `<section class="energy-summary" aria-label="Energy summary"><p class="summary-caption"></p><div class="summary-grid">${this.summaryEntities.map(item => `<div class="summary-item" data-energy="${item.key}"><div class="summary-label"></div><div class="summary-value"></div><div class="summary-note"></div></div>`).join('')}</div></section>` : ''}${showBrush ? '<div id="brush"></div>' : ''}</ha-card>`;
+    </style><ha-card><div class="head">${showTitle ? '<div class="title"></div>' : ''}<div class="header-row"><div class="controls"><button id="prev" aria-label="Previous day">‹</button><input id="date" aria-label="History date" type="date" value="${day}"><button id="next" aria-label="Next day">›</button><button id="today">Today</button></div>${summaryMarkup}</div></div><div class="status" role="status"></div><div id="chart"></div>${showBrush ? '<div id="brush"></div>' : ''}</ha-card>`;
     const heading = this.shadowRoot.querySelector('.title');
     if (showTitle && heading) heading.textContent = title;
     const status = this.shadowRoot.querySelector('.status');

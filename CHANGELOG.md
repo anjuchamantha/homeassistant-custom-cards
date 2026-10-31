@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Moved energy totals from large bottom tiles into a compact top-right header block, with full descriptions available on hover/focus.
+- Kept the original card height when totals wrap on narrow cards by reallocating plot height, including on resize.
+
+
 - Added optional selected-range energy summaries from cumulative energy helpers, with solar/load/grid and separate battery charge/discharge totals.
 - Added Wh/kWh/MWh conversion, explicit missing/reset explanations, zoom/brush synchronization, and a generic summary example.
 

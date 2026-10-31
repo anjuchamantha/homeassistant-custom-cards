@@ -47,7 +47,7 @@ Use the arrows, date field, and Today button to load a day. The day uses the bro
 
 ## Energy summary
 
-Configure cumulative energy sensors to show a summary row between the main chart and the mini graph. See the [full energy summary example](examples/energy-summary.yaml). The existing graph configuration remains unchanged.
+Configure cumulative energy sensors to show compact totals in the top-right header beside the date controls. See the [full energy summary example](examples/energy-summary.yaml). The large tiles below the chart are removed. Short labels keep the totals small; hover an item for its full description and any missing-data explanation; keyboard focus exposes the same information to assistive technology. On narrow cards the totals wrap below the date controls and the main plot shrinks by the same amount, keeping the card's overall height unchanged.
 
 ```yaml
 summary:
@@ -81,11 +81,11 @@ Totals are the counter at the end of the selected range minus its value at the s
 
 The `grid` label is **Grid energy**, and defaults to `net` mode: negative changes remain negative. Use optional `grid_import` and `grid_export` keys only when you have separate cumulative counters for those directions. One net helper cannot supply both import and export totals. Other keys default to `increasing` mode. `net` permits decreases; `increasing` reports a detected counter decrease as unavailable. Explicit changes to `last_reset` make either mode unavailable for that range. The card does not guess consumption across resets.
 
-Missing history, unsupported units, unavailable boundary states, or detected resets display **—** with an explanation, rather than zero. A stable recorded counter can correctly show 0.00 kWh. Recorder must retain the energy helpers as well as the power sensors. Newly created helpers cannot backfill energy history from before they existed; the card does not use long-term statistics. An energy-history request failure leaves the power chart working.
+Missing history, unsupported units, unavailable boundary states, or detected resets display **—** with the explanation in the item tooltip and accessible label, rather than zero. A stable recorded counter can correctly show 0.00 kWh. Recorder must retain the energy helpers as well as the power sensors. Newly created helpers cannot backfill energy history from before they existed; the card does not use long-term statistics. An energy-history request failure leaves the power chart working.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `summary.show` | Enabled when entities are configured | Show the energy summary; `false` disables its history request and row |
+| `summary.show` | Enabled when entities are configured | Show the energy summary; `false` disables its history request and compact totals |
 | `summary.precision` | `2` | Decimal places in kWh, from 0 to 6 |
 | `summary.entities` | None | Any of `solar`, `load`, `grid`, `grid_import`, `grid_export`, `battery_charge`, `battery_discharge`, mapped to a sensor ID or object |
 | Per-helper `entity` | Required for object syntax | Cumulative energy sensor ID |

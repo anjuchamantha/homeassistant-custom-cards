@@ -15,7 +15,7 @@ const context = vm.createContext({ HTMLElement: class {
       getElementById: key => get(key),
     };
     function get(key) {
-      if (!elements.has(key)) elements.set(key, { querySelector: child => get(key + ' ' + child) });
+      if (!elements.has(key)) elements.set(key, { querySelector: child => get(key + ' ' + child), setAttribute(name, value) { this[name] = value; } });
       return elements.get(key);
     }
   }
