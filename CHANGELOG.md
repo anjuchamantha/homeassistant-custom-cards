@@ -9,3 +9,4 @@
 - Fixed minimal REST history parsing, calendar-day boundaries, repeated configuration, and stale request handling.
 - Rendered configurable titles and errors as text to prevent HTML injection.
 - Added configuration validation, regression tests, CI, local-file ignore rules, and installation documentation.
+- Removed the unverified Home Assistant 2025.10.0 minimum from HACS metadata. Compatibility still requires testing on the installed Home Assistant version.
