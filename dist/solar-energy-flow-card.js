@@ -42,9 +42,9 @@ function(){function t(t){t.remember("_draggable",this),this.el=t}t.prototype.ini
 const ApexCharts = SolarEnergyCharts;
 /* global SolarEnergyCharts */
 const ENERGY_KEYS = ['solar', 'battery', 'grid', 'load'];
-const ENERGY_COLORS = ['#ffcc99', '#a8dad5', '#a6c8e5', '#e53935'];
-const ENERGY_PALETTE = { solar: '#ffcc99', grid: '#a6c8e5', grid_import: '#a6c8e5', grid_export: '#a6c8e5', battery_discharge: '#a8dad5', battery_charge: '#ffafca', load: '#e53935', balance: '#9e9e9e' };
-const ENERGY_SUMMARY_SHORT = { solar: 'Solar', load: 'Home', grid: 'Grid', grid_import: 'Import', grid_export: 'Export', battery_charge: 'Charge', battery_discharge: 'Discharge', balance: 'Est. losses' };
+const ENERGY_COLORS = ['#ffb300', '#26a69a', '#42a5f5', '#ab47bc'];
+const ENERGY_PALETTE = { solar: '#ffb300', grid: '#42a5f5', grid_import: '#42a5f5', grid_export: '#42a5f5', battery_discharge: '#26a69a', battery_charge: '#26a69a', load: '#ab47bc', balance: '#9e9e9e' };
+const ENERGY_SUMMARY_SHORT = { solar: 'Solar', load: 'Home', grid: 'Grid', grid_import: 'Import', grid_export: 'Export', battery_charge: 'Charge', battery_discharge: 'Discharge', balance: 'Losses' };
 const ENERGY_SUMMARY = {
   solar: 'Solar generated', load: 'Home consumed', grid: 'Grid energy',
   grid_import: 'Grid imported', grid_export: 'Grid exported',
@@ -265,7 +265,7 @@ class SolarEnergyFlowCard extends HTMLElement {
     const items = keys.filter(key => configured.has(key)).map((key, index) => ({ ...configured.get(key),
       operator: !equation || index === 0 ? '' : key === 'load' ? '=' : ['battery_charge', 'grid_export'].includes(key) ? '−' : '+',
       color: ENERGY_PALETTE[key] }));
-    if (equation) items.splice(items.findIndex(item => item.key === 'load'), 0, { key: 'balance', label: 'Estimated losses / balance difference', operator: '−', color: ENERGY_PALETTE.balance });
+    if (equation) items.push({ key: 'balance', label: 'Estimated losses / balance difference', operator: '+', color: ENERGY_PALETTE.balance });
     return items;
   }
 
@@ -365,8 +365,10 @@ class SolarEnergyFlowCard extends HTMLElement {
 
   summaryChartHeight(height) {
     if (!this.summaryEntities.length || typeof height !== 'number') return height;
-    const row = this.shadowRoot?.querySelector('.header-row')?.getBoundingClientRect?.();
     const controls = this.shadowRoot?.querySelector('.controls')?.getBoundingClientRect?.();
+    const date = this.shadowRoot?.querySelector('#date')?.getBoundingClientRect?.();
+    if (date) this.shadowRoot.querySelector('.energy-summary')?.style?.setProperty('--energy-box-height', `${date.height}px`);
+    const row = this.shadowRoot?.querySelector('.header-row')?.getBoundingClientRect?.();
     // A wrapped compact summary uses chart space, keeping the card's total height unchanged.
     const extra = row && controls ? Math.max(0, row.height - controls.height) : 0;
     return Math.max(1, height - extra);
@@ -386,6 +388,8 @@ class SolarEnergyFlowCard extends HTMLElement {
     });
     const row = this.shadowRoot.querySelector('.header-row');
     if (row) this.layoutObserver.observe(row);
+    const date = this.shadowRoot.querySelector('#date');
+    if (date) this.layoutObserver.observe(date);
   }
 
   chartOptions(isBrush = false) {
@@ -511,7 +515,7 @@ class SolarEnergyFlowCard extends HTMLElement {
       .header-row:has(.energy-summary) .controls{flex:0 1 auto}
       .energy-summary{position:relative;flex:1 1 440px;max-width:720px;min-width:0;margin-left:auto;overflow-x:auto}
       .summary-grid{display:flex;align-items:center;gap:3px}.summary-operator{flex:none;font-size:12px;color:var(--secondary-text-color,#697586)}
-      .summary-item{position:relative;flex:1 0 auto;min-width:54px;padding:2px 4px;text-align:right;line-height:1.25;border-radius:4px;border-top:2px solid var(--energy-color);background:var(--energy-tint)}
+      .summary-item{box-sizing:border-box;height:var(--energy-box-height,34px);display:flex;flex-direction:column;justify-content:center;position:relative;flex:1 0 auto;min-width:54px;padding:2px 4px;text-align:right;line-height:1.25;border-radius:4px;border-top:2px solid var(--energy-color);background:var(--energy-tint)}
       .summary-label{font-size:9px;color:var(--secondary-text-color,#697586);white-space:nowrap}
       .summary-value{font-size:11px;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--primary-text-color,inherit)}
       .summary-caption,.summary-note{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}

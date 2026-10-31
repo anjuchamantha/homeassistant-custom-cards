@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Matched energy-box height to the date control and moved losses to the right: Solar + Grid + Discharge − Charge = Home + Losses.
+- Restored the original amber solar, blue grid, teal battery, and purple Home/Load palette in the graph, boxes, and examples.
+
+
 - Arranged complete energy summaries as colored equation boxes: Solar + Grid + Discharge − Charge − estimated losses = Home, preserving measured totals and the card height.
 - Matched the pastel solar/grid/battery palette to the reference and changed Home/Load to red; added direction filtering to color charging and discharging separately.
 

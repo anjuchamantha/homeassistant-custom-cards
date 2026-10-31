@@ -298,16 +298,16 @@ test('equation boxes keep measured Home and account for the residual loss balanc
     { state: String(100 + totals[key]), last_changed: new Date(start + 3600000).toISOString(), attributes: {unit_of_measurement:'kWh'} },
   ]);
   const items = card.summaryItems();
-  assert.equal(items.map(item => item.key).join(','), 'solar,grid,battery_discharge,battery_charge,balance,load');
-  assert.equal(items.map(item => item.operator).join(''), '++−−=');
-  assert.ok(Math.abs(card.summaryTotal(items[4]).value - 0.8) < 1e-8);
-  assert.ok(Math.abs(card.summaryTotal(items[5]).value - 13.23) < 1e-8);
-  assert.equal(items[5].color, '#e53935');
+  assert.equal(items.map(item => item.key).join(','), 'solar,grid,battery_discharge,battery_charge,load,balance');
+  assert.equal(items.map(item => item.operator).join(''), '++−=+');
+  assert.ok(Math.abs(card.summaryTotal(items[5]).value - 0.8) < 1e-8);
+  assert.ok(Math.abs(card.summaryTotal(items[4]).value - 13.23) < 1e-8);
+  assert.equal(items[4].color, '#ab47bc');
   card.summaryHistory.pop();
-  assert.equal(card.summaryTotal(items[4]).value, null);
+  assert.equal(card.summaryTotal(items[5]).value, null);
 });
 
-test('battery directions share history but mask opposite signs and use the reference palette', () => {
+test('battery directions share history but mask opposite signs and use the restored palette', () => {
   const card = new Card(); card.setConfig(config);
   card.date = vm.runInContext('new Date(2026, 0, 1, 12)', context);
   const start = card.bounds().start;
@@ -317,8 +317,8 @@ test('battery directions share history but mask opposite signs and use the refer
   const discharge = card.series.find(series => series.direction === 'negative');
   charge.group_by.func = discharge.group_by.func = 'raw';
   assert.equal(charge.entity, discharge.entity);
-  assert.equal(charge.color, '#ffafca'); assert.equal(discharge.color, '#a8dad5');
+  assert.equal(charge.color, '#26a69a'); assert.equal(discharge.color, '#26a69a');
   assert.equal(card.seriesData(charge)[0][1], 40); assert.equal(card.seriesData(charge)[1][1], null);
   assert.equal(card.seriesData(discharge)[0][1], null); assert.equal(card.seriesData(discharge)[1][1], -20);
-  assert.equal(card.series.find(series => series.key === 'load').color, '#e53935');
+  assert.equal(card.series.find(series => series.key === 'load').color, '#ab47bc');
 });

@@ -10,4 +10,4 @@ Optional energy summaries load cumulative helper histories in a separate, failur
 
 Energy totals use the header's existing vertical space on wide cards. If the totals wrap onto a second header row, its extra height is subtracted from the configured main plot height. A header ResizeObserver keeps the height budget consistent across responsive layout changes; summary descriptions stay in tooltips/accessibility text rather than adding visible rows.
 
-Complete energy summaries use canonical supply/storage order with a signed residual balance term before measured Home. Plot battery directions can be split into two logical series sharing one history entity; sign masking happens after the common bucket aggregation and does not affect cumulative energy totals.
+Complete energy summaries use canonical supply/storage order with a signed residual balance term after measured Home on the right-hand side. Plot battery directions can be split into two logical series sharing one history entity; sign masking happens after the common bucket aggregation and does not affect cumulative energy totals.

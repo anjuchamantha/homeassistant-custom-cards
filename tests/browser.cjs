@@ -136,10 +136,14 @@ const http = require('node:http');
     const solarSummary = page.locator('solar-energy-flow-card [data-energy="solar"] .summary-value');
     assert.equal(await solarSummary.innerText(), '24.00 kWh');
     assert.equal(await page.locator('solar-energy-flow-card .summary-item').count(), 6);
-    assert.equal(await page.locator('solar-energy-flow-card .summary-item').evaluateAll(items => items.map(item => item.dataset.energy).join(',')), 'solar,grid,battery_discharge,battery_charge,balance,load');
-    assert.equal(await page.locator('solar-energy-flow-card .summary-operator').allTextContents().then(values => values.join('')), '++−−=');
-    assert.equal(await page.locator('solar-energy-flow-card [data-energy="load"]').evaluate(element => getComputedStyle(element).borderTopColor), 'rgb(229, 57, 53)');
-    assert.equal(await page.evaluate(() => window.card.series.find(series => series.key === 'load').color), '#e53935');
+    assert.ok(await page.evaluate(() => {
+      const dateHeight = window.card.shadowRoot.querySelector('#date').getBoundingClientRect().height;
+      return [...window.card.shadowRoot.querySelectorAll('.summary-item')].every(item => Math.abs(item.getBoundingClientRect().height - dateHeight) < 0.5);
+    }));
+    assert.equal(await page.locator('solar-energy-flow-card .summary-item').evaluateAll(items => items.map(item => item.dataset.energy).join(',')), 'solar,grid,battery_discharge,battery_charge,load,balance');
+    assert.equal(await page.locator('solar-energy-flow-card .summary-operator').allTextContents().then(values => values.join('')), '++−=+');
+    assert.equal(await page.locator('solar-energy-flow-card [data-energy="load"]').evaluate(element => getComputedStyle(element).borderTopColor), 'rgb(171, 71, 188)');
+    assert.equal(await page.evaluate(() => window.card.series.find(series => series.key === 'load').color), '#ab47bc');
     assert.ok(await page.evaluate(() => Math.abs(window.card.getBoundingClientRect().height - window.baseMobileHeight) < 2));
     assert.ok(await page.evaluate(() => window.card.shadowRoot.querySelector('.energy-summary').getBoundingClientRect().bottom <= window.card.shadowRoot.querySelector('#chart').getBoundingClientRect().top));
     await page.evaluate(() => { const start = window.card.bounds().start; window.card.charts[0].zoomX(start + 6 * 3600000, start + 12 * 3600000); });
@@ -158,6 +162,10 @@ const http = require('node:http');
     await page.setViewportSize({ width: 1200, height: 1100 });
     await page.waitForFunction(() => window.card.shadowRoot.querySelector('#chart .apexcharts-svg').getBoundingClientRect().width > 900 && window.card.shadowRoot.querySelector('#brush .apexcharts-svg').getBoundingClientRect().width > 900 && window.card.charts[0].w.config.chart.height === 550);
     assert.ok(await page.evaluate(() => Math.abs(window.card.getBoundingClientRect().height - window.baseDesktopHeight) < 2));
+    assert.ok(await page.evaluate(() => {
+      const dateHeight = window.card.shadowRoot.querySelector('#date').getBoundingClientRect().height;
+      return [...window.card.shadowRoot.querySelectorAll('.summary-item')].every(item => Math.abs(item.getBoundingClientRect().height - dateHeight) < 0.5);
+    }));
     assert.ok(await page.evaluate(() => {
       const summary = window.card.shadowRoot.querySelector('.energy-summary').getBoundingClientRect();
       const controls = window.card.shadowRoot.querySelector('.controls').getBoundingClientRect();
