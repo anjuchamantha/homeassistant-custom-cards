@@ -247,7 +247,7 @@ class SolarEnergyFlowCard extends HTMLElement {
     }
     options.annotations = energyMerge(options.annotations, { yaxis: [
       ...(options.annotations?.yaxis || []),
-      { y: 0, borderColor: text, strokeDashArray: 6, label: { text: isBrush ? '' : '0 W', position: 'left',
+      { y: 0, borderColor: text, strokeDashArray: 6, label: { text: isBrush ? '' : '0 W', position: 'right',
         borderColor: 'transparent', style: { color: text, background: 'transparent', fontSize: '11px' } } },
     ] });
     if (isBrush) {

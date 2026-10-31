@@ -39,7 +39,7 @@ Replace the example IDs with your real IDs in your private Home Assistant dashbo
 
 An omitted or empty `title` hides the heading. `header.show: false` hides it even when a title is supplied. `header.title` can also supply the title.
 
-The default graph now matches the bundled ApexCharts example: smooth 1px lines, translucent solar/battery/grid areas, a load line, five-minute averages with gaps, a shared tooltip, 12-hour labels, zoom/pan/reset/export, and a 100px solar/load brush overview. A dashed, labeled **0 W** annotation is always included. Your existing `entities:` configuration continues to work.
+The default graph now matches the bundled ApexCharts example: smooth 1px lines, translucent solar/battery/grid areas, a load line, five-minute averages with gaps, a shared tooltip, 12-hour labels, zoom/pan/reset/export, and a 100px solar/load brush overview. A dashed **0 W** baseline is always included, with its label on the right side of the graph. Your existing `entities:` configuration continues to work.
 
 All four sensors must report numeric **watts**. Values are plotted as reported, including negative values; no sign or unit conversion is performed. `hours` was previously unused and remains ignored; the card always shows one calendar day.
 

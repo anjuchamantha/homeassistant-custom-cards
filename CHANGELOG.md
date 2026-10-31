@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Moved the 0 W baseline label to the right edge to keep it clear of left-axis tick labels.
+
+
 - Removed the separate cross-day timeline slider; retained the brush overview and date controls.
 
 
