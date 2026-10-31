@@ -39,7 +39,7 @@ Replace the example IDs with your real IDs in your private Home Assistant dashbo
 
 An omitted or empty `title` hides the heading. `header.show: false` hides it even when a title is supplied. `header.title` can also supply the title.
 
-The default graph now matches the bundled ApexCharts example: smooth 1px lines, translucent solar/battery/grid areas, a load line, five-minute averages with gaps, a shared tooltip, 12-hour labels, zoom/pan/reset/export, and a 100px solar/load brush overview. A dashed **0 W** baseline is always included, with its label on the right side of the graph. Your existing `entities:` configuration continues to work.
+The default graph now matches the bundled ApexCharts example: smooth 1px lines, translucent solar/battery/grid areas, a red load line, five-minute averages with gaps, a shared tooltip, 12-hour labels, zoom/pan/reset/export, and a 100px solar/load brush overview. A dashed **0 W** baseline is always included, with its label on the right side of the graph. Your existing `entities:` configuration continues to work.
 
 All four sensors must report numeric **watts**. Values are plotted as reported, including negative values; no sign or unit conversion is performed. `hours` was previously unused and remains ignored; the card always shows one calendar day.
 
@@ -47,7 +47,9 @@ Use the arrows, date field, and Today button to load a day. The day uses the bro
 
 ## Energy summary
 
-Configure cumulative energy sensors to show compact totals in the top-right header beside the date controls. See the [full energy summary example](examples/energy-summary.yaml). The large tiles below the chart are removed. Short labels keep the totals small; hover an item for its full description and any missing-data explanation; keyboard focus exposes the same information to assistive technology. On narrow cards the totals wrap below the date controls and the main plot shrinks by the same amount, keeping the card's overall height unchanged.
+Configure cumulative energy sensors to show compact totals in the top-right header beside the date controls. See the [full energy summary example](examples/energy-summary.yaml). The large tiles below the chart are removed. When solar, grid, battery charge/discharge, and home counters are configured, the compact boxes follow **Solar + Grid + Discharge − Charge − Est. losses = Home**. Home keeps its measured counter value. Estimated losses are the signed balance difference and include measurement/estimation error; a negative balance is flagged in its tooltip. Incomplete configurations show only the configured totals without equation operators.
+
+Short labels keep the totals small; hover an item for its full description and any missing-data explanation; keyboard focus exposes the same information to assistive technology. On narrow cards the totals wrap below the date controls and the main plot shrinks by the same amount, keeping the card's overall height unchanged. On very narrow cards, scroll the equation sideways to see all terms.
 
 ```yaml
 summary:
@@ -181,6 +183,7 @@ Durations accept positive numbers with `ms`, `s`/`sec`, `m`/`min`, `h`/`hr`, or 
 | `type` | `line` | `line` or `area` |
 | `opacity` | `0.2` | Area opacity from 0 to 1; `entities` defaults use 0.25 / 0.2 / 0.3 |
 | `stroke_width` | `1` | Line width from 0 to 10 |
+| `direction` | `both` | `both`, `positive`, or `negative`; mask the opposite sign after grouping without changing values |
 | `curve` | `smooth` | `smooth`, `straight`, or `stepline` |
 | `float_precision` | `0` | Tooltip decimal places, 0 to 10 |
 | `extend_to` | `false` | No extension; `now` extends to current time (capped at range end), `end` extends to range end |
@@ -189,7 +192,7 @@ Durations accept positive numbers with `ms`, `s`/`sec`, `m`/`min`, `h`/`hr`, or 
 | `group_by.fill` | `"null"` | Empty buckets: `"null"`, `zero`, or `last`; quote `"null"` in YAML |
 | `show.in_brush` | `false` for explicit series | Include in the overview; if none are selected, show all series |
 
-For `entities:` shorthand, the solar and load series appear in the brush. `raw` preserves recorded timestamps and null gaps without bucketing or extension; shared tooltips work best with aligned bucketed data.
+For `entities:` shorthand, the solar and load series appear in the brush. Battery power is split into positive charging (pink) and negative discharging (teal) series. If your inverter uses the opposite sign convention, use explicit `series:` with the appropriate directions. The palette is solar orange `#ffcc99`, grid blue `#a6c8e5`, battery discharge teal `#a8dad5`, battery charge pink `#ffafca`, and home red `#e53935`. The summary boxes use the same palette. Existing explicit series colors remain configurable; use the updated example YAML for the matching colors and split battery series. `raw` preserves recorded timestamps and null gaps without bucketing or extension; shared tooltips work best with aligned bucketed data.
 
 This implements the options used by the included example, not the entire separate ApexCharts Card API: transforms, data generators, statistics, arbitrary span offsets, and action handlers are not supported. Raw `apex_config` cannot replace the card's series, datetime bounds, chart IDs, brush target/selection, or required zero annotation. JavaScript strings are never evaluated. Explicit y-axis min/max options can clip data or the zero line; omit them for automatic bounds that include zero.
 

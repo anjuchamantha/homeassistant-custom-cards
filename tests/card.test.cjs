@@ -284,3 +284,41 @@ test('stale energy history cannot overwrite the newly selected date', async () =
   assert.equal(card.summaryHistory[0][0].state, '200');
   assert.equal(card.summaryError, '');
 });
+
+test('equation boxes keep measured Home and account for the residual loss balance', () => {
+  const card = new Card();
+  const entities = Object.fromEntries(['load', 'battery_charge', 'grid', 'solar', 'battery_discharge'].map(key => [key, `sensor.${key}_energy`]));
+  card.setConfig({ ...config, summary: { entities } });
+  card.date = vm.runInContext('new Date(2026, 0, 1, 12)', context);
+  const start = card.bounds().start;
+  card.summaryRange = { start, end: start + 3600000 };
+  const totals = { solar: 10.39, grid: 4.03, battery_discharge: 1.07, battery_charge: 1.46, load: 13.23 };
+  card.summaryHistory = Object.entries(entities).map(([key, entity]) => [
+    { entity_id: entity, state: '100', last_changed: new Date(start).toISOString(), attributes: {unit_of_measurement:'kWh'} },
+    { state: String(100 + totals[key]), last_changed: new Date(start + 3600000).toISOString(), attributes: {unit_of_measurement:'kWh'} },
+  ]);
+  const items = card.summaryItems();
+  assert.equal(items.map(item => item.key).join(','), 'solar,grid,battery_discharge,battery_charge,balance,load');
+  assert.equal(items.map(item => item.operator).join(''), '++−−=');
+  assert.ok(Math.abs(card.summaryTotal(items[4]).value - 0.8) < 1e-8);
+  assert.ok(Math.abs(card.summaryTotal(items[5]).value - 13.23) < 1e-8);
+  assert.equal(items[5].color, '#e53935');
+  card.summaryHistory.pop();
+  assert.equal(card.summaryTotal(items[4]).value, null);
+});
+
+test('battery directions share history but mask opposite signs and use the reference palette', () => {
+  const card = new Card(); card.setConfig(config);
+  card.date = vm.runInContext('new Date(2026, 0, 1, 12)', context);
+  const start = card.bounds().start;
+  card.history = [[{entity_id:'sensor.battery',state:'40',last_changed:new Date(start).toISOString()},
+    {state:'-20',last_changed:new Date(start + 60000).toISOString()}]];
+  const charge = card.series.find(series => series.direction === 'positive');
+  const discharge = card.series.find(series => series.direction === 'negative');
+  charge.group_by.func = discharge.group_by.func = 'raw';
+  assert.equal(charge.entity, discharge.entity);
+  assert.equal(charge.color, '#ffafca'); assert.equal(discharge.color, '#a8dad5');
+  assert.equal(card.seriesData(charge)[0][1], 40); assert.equal(card.seriesData(charge)[1][1], null);
+  assert.equal(card.seriesData(discharge)[0][1], null); assert.equal(card.seriesData(discharge)[1][1], -20);
+  assert.equal(card.series.find(series => series.key === 'load').color, '#e53935');
+});

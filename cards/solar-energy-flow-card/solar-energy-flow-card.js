@@ -1,7 +1,8 @@
 /* global SolarEnergyCharts */
 const ENERGY_KEYS = ['solar', 'battery', 'grid', 'load'];
-const ENERGY_COLORS = ['#ffb300', '#26a69a', '#42a5f5', '#ab47bc'];
-const ENERGY_SUMMARY_SHORT = { solar: 'Solar', load: 'Home', grid: 'Grid', grid_import: 'Import', grid_export: 'Export', battery_charge: 'Charge', battery_discharge: 'Discharge' };
+const ENERGY_COLORS = ['#ffcc99', '#a8dad5', '#a6c8e5', '#e53935'];
+const ENERGY_PALETTE = { solar: '#ffcc99', grid: '#a6c8e5', grid_import: '#a6c8e5', grid_export: '#a6c8e5', battery_discharge: '#a8dad5', battery_charge: '#ffafca', load: '#e53935', balance: '#9e9e9e' };
+const ENERGY_SUMMARY_SHORT = { solar: 'Solar', load: 'Home', grid: 'Grid', grid_import: 'Import', grid_export: 'Export', battery_charge: 'Charge', battery_discharge: 'Discharge', balance: 'Est. losses' };
 const ENERGY_SUMMARY = {
   solar: 'Solar generated', load: 'Home consumed', grid: 'Grid energy',
   grid_import: 'Grid imported', grid_export: 'Grid exported',
@@ -51,8 +52,11 @@ class SolarEnergyFlowCard extends HTMLElement {
     if (span > 7 * 86400000) throw new Error('graph_span must be at most 7d.');
     const defaults = { stroke_width: 1, curve: 'smooth', float_precision: 0, extend_to: false,
       group_by: { func: 'avg', duration: '5min', fill: 'null' } };
-    const input = config.series || ENERGY_KEYS.map((key, i) => ({
-      entity: config.entities?.[key], name: `${key[0].toUpperCase()}${key.slice(1)} (W)`,
+    const input = config.series || ENERGY_KEYS.flatMap((key, i) => key === 'battery' ? [
+      { entity: config.entities?.battery, key, name: 'Charge', color: ENERGY_PALETTE.battery_charge, type: 'area', opacity: 0.2, direction: 'positive' },
+      { entity: config.entities?.battery, key, name: 'Discharge', color: ENERGY_PALETTE.battery_discharge, type: 'area', opacity: 0.2, direction: 'negative' },
+    ] : ({
+      entity: config.entities?.[key], name: `${key[0].toUpperCase()}${key.slice(1)}`,
       color: ENERGY_COLORS[i], type: key === 'load' ? 'line' : 'area',
       opacity: [0.25, 0.2, 0.3, 0][i], show: { in_brush: key === 'solar' || key === 'load' }, key,
     }));
@@ -62,6 +66,7 @@ class SolarEnergyFlowCard extends HTMLElement {
       if (!/^sensor\.[a-z0-9_]+$/.test(series.entity || '')) throw new Error('Configure solar, battery, grid, and load with sensor entity IDs, or use series.');
       if (series.name !== undefined && typeof series.name !== 'string') throw new Error('Series name must be a string.');
       if (series.color !== undefined && !/^#[a-f\d]{3}(?:[a-f\d]{3})?$/i.test(series.color)) throw new Error('Series color must be a hex color.');
+      if (!['both', 'positive', 'negative'].includes(series.direction || 'both')) throw new Error('direction must be both, positive, or negative.');
       if (!['line', 'area'].includes(series.type || 'line')) throw new Error('Series type must be line or area.');
       if (!['smooth', 'straight', 'stepline'].includes(series.curve)) throw new Error('Unsupported curve.');
       if (!Number.isFinite(series.stroke_width) || series.stroke_width < 0 || series.stroke_width > 10) throw new Error('stroke_width must be between 0 and 10.');
@@ -210,6 +215,26 @@ class SolarEnergyFlowCard extends HTMLElement {
     return { value: last.v - baseline.v, reason: '' };
   }
 
+  summaryItems() {
+    const configured = new Map(this.summaryEntities.map(item => [item.key, item]));
+    const keys = ['solar', 'grid', 'grid_import', 'grid_export', 'battery_discharge', 'battery_charge', 'load'];
+    const equation = ['solar', 'load', 'battery_discharge', 'battery_charge'].every(key => configured.has(key)) &&
+      ((configured.has('grid') && !configured.has('grid_import') && !configured.has('grid_export')) || (!configured.has('grid') && configured.has('grid_import')));
+    const items = keys.filter(key => configured.has(key)).map((key, index) => ({ ...configured.get(key),
+      operator: !equation || index === 0 ? '' : key === 'load' ? '=' : ['battery_charge', 'grid_export'].includes(key) ? '−' : '+',
+      color: ENERGY_PALETTE[key] }));
+    if (equation) items.splice(items.findIndex(item => item.key === 'load'), 0, { key: 'balance', label: 'Estimated losses / balance difference', operator: '−', color: ENERGY_PALETTE.balance });
+    return items;
+  }
+
+  summaryTotal(item) {
+    if (item.key !== 'balance') return this.energyTotal(item);
+    const results = this.summaryEntities.map(entry => ({ key: entry.key, ...this.energyTotal(entry) }));
+    if (results.some(result => result.value === null)) return { value: null, reason: 'All counter totals are needed for the balance' };
+    const value = results.reduce((sum, result) => sum + (['load', 'battery_charge', 'grid_export'].includes(result.key) ? -result.value : result.value), 0);
+    return { value, reason: value < -1e-9 ? 'Negative balance: check measurement points and counter definitions' : '' };
+  }
+
   updateSummary(range) {
     if (range && Number.isFinite(range.start) && Number.isFinite(range.end) && range.end > range.start) {
       const bounds = this.bounds();
@@ -218,14 +243,14 @@ class SolarEnergyFlowCard extends HTMLElement {
     if (!this.summaryEntities?.length || !this.shadowRoot) return;
     const caption = this.shadowRoot.querySelector('.summary-caption');
     if (caption) caption.textContent = this.loading ? 'Energy · loading…' : 'Energy · selected time range';
-    for (const item of this.summaryEntities) {
+    for (const item of this.summaryItems()) {
       const element = this.shadowRoot.querySelector(`[data-energy="${item.key}"]`);
       if (!element) continue;
-      const result = this.loading || this.error ? { value: null, reason: this.error || 'Loading energy history' } : this.energyTotal(item);
+      const result = this.loading || this.error ? { value: null, reason: this.error || 'Loading energy history' } : this.summaryTotal(item);
       element.querySelector('.summary-label').textContent = ENERGY_SUMMARY_SHORT[item.key];
       element.querySelector('.summary-value').textContent = result.value === null ? '—' : `${result.value.toFixed(this.config.summary?.precision ?? 2)} kWh`;
       element.querySelector('.summary-note').textContent = result.reason;
-      element.title = `${item.label}: ${result.value === null ? result.reason : element.querySelector('.summary-value').textContent}`;
+      element.title = `${item.label}: ${result.value === null ? result.reason : element.querySelector('.summary-value').textContent}${result.value !== null && result.reason ? ` (${result.reason})` : ''}`;
       element.setAttribute('aria-label', element.title);
     }
   }
@@ -245,6 +270,12 @@ class SolarEnergyFlowCard extends HTMLElement {
   }
 
   seriesData(series) {
+    const data = this.groupedData(series);
+    return data.map(([time, value]) => [time, value !== null &&
+      ((series.direction === 'positive' && value < 0) || (series.direction === 'negative' && value > 0)) ? null : value]);
+  }
+
+  groupedData(series) {
     const { start, end } = this.bounds();
     const limit = Math.min(end, Date.now());
     const raw = this.rawValues(series.entity).filter(point => point.t >= start && point.t <= limit);
@@ -426,7 +457,7 @@ class SolarEnergyFlowCard extends HTMLElement {
     const title = this.config.header?.title ?? this.config.title ?? '';
     const showTitle = this.config.header?.show !== false && title.trim() !== '';
     const showBrush = this.config.experimental?.brush !== false;
-    const summaryMarkup = this.summaryEntities.length ? `<section class="energy-summary" aria-label="Energy summary for selected time range"><p class="summary-caption"></p><div class="summary-grid">${this.summaryEntities.map(item => `<div class="summary-item" data-energy="${item.key}" tabindex="0"><div class="summary-label"></div><div class="summary-value"></div><div class="summary-note"></div></div>`).join('')}</div></section>` : '';
+    const summaryMarkup = this.summaryEntities.length ? `<section class="energy-summary" aria-label="Energy summary for selected time range"><p class="summary-caption"></p><div class="summary-grid">${this.summaryItems().map(item => `${item.operator ? `<span class="summary-operator" aria-hidden="true">${item.operator}</span>` : ''}<div class="summary-item" data-energy="${item.key}" style="--energy-color:${item.color};--energy-tint:${item.color}26" tabindex="0"><div class="summary-label"></div><div class="summary-value"></div><div class="summary-note"></div></div>`).join('')}</div></section>` : '';
     this.shadowRoot.innerHTML = `<style>
       :host{display:block;min-width:0}ha-card{padding:12px;overflow:hidden}
       .head{display:flex;flex-direction:column;gap:8px;margin-bottom:8px}.header-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
@@ -436,11 +467,11 @@ class SolarEnergyFlowCard extends HTMLElement {
       button{cursor:pointer;flex-shrink:0}input{max-width:165px}button:focus-visible,input:focus-visible{outline:2px solid var(--primary-color,#03a9f4)}
       #chart,#brush{min-width:0}.status{font-size:.9rem;color:var(--secondary-text-color,#697586)}
       .header-row:has(.energy-summary) .controls{flex:0 1 auto}
-      .energy-summary{flex:1 1 350px;max-width:550px;min-width:0;margin-left:auto;overflow-x:auto}
-      .summary-grid{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(62px,1fr);gap:6px}
-      .summary-item{min-width:0;text-align:right;line-height:1.25;border-radius:3px}
-      .summary-label{font-size:10px;color:var(--secondary-text-color,#697586);white-space:nowrap}
-      .summary-value{font-size:12px;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--primary-text-color,inherit)}
+      .energy-summary{position:relative;flex:1 1 440px;max-width:720px;min-width:0;margin-left:auto;overflow-x:auto}
+      .summary-grid{display:flex;align-items:center;gap:3px}.summary-operator{flex:none;font-size:12px;color:var(--secondary-text-color,#697586)}
+      .summary-item{position:relative;flex:1 0 auto;min-width:54px;padding:2px 4px;text-align:right;line-height:1.25;border-radius:4px;border-top:2px solid var(--energy-color);background:var(--energy-tint)}
+      .summary-label{font-size:9px;color:var(--secondary-text-color,#697586);white-space:nowrap}
+      .summary-value{font-size:11px;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--primary-text-color,inherit)}
       .summary-caption,.summary-note{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
       .summary-item:focus-visible{outline:2px solid var(--primary-color,#03a9f4);outline-offset:-2px}
       .apexcharts-tooltip,.apexcharts-menu{color:#222}.apexcharts-theme-dark{color:#eee}

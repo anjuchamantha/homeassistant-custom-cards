@@ -49,25 +49,32 @@ apex_config:
     shared: true
 series:
   - entity: sensor.inverter_pv_power
-    name: Solar (W)
-    color: "#ffb300"
+    name: Solar
+    color: "#ffcc99"
     type: area
     opacity: 0.25
     show:
       in_brush: true
   - entity: sensor.inverter_battery_power
-    name: Battery (W)
-    color: "#26a69a"
+    name: Charge
+    color: "#ffafca"
+    direction: positive
+    type: area
+    opacity: 0.2
+  - entity: sensor.inverter_battery_power
+    name: Discharge
+    color: "#a8dad5"
+    direction: negative
     type: area
     opacity: 0.2
   - entity: sensor.grid_power
-    name: Grid (W)
-    color: "#42a5f5"
+    name: Grid
+    color: "#a6c8e5"
     type: area
     opacity: 0.3
   - entity: sensor.home_load_power
-    name: Load (W)
-    color: "#ab47bc"
+    name: Home
+    color: "#e53935"
     type: line
     show:
       in_brush: true

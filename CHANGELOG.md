@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Arranged complete energy summaries as colored equation boxes: Solar + Grid + Discharge − Charge − estimated losses = Home, preserving measured totals and the card height.
+- Matched the pastel solar/grid/battery palette to the reference and changed Home/Load to red; added direction filtering to color charging and discharging separately.
+
+
 - Moved energy totals from large bottom tiles into a compact top-right header block, with full descriptions available on hover/focus.
 - Kept the original card height when totals wrap on narrow cards by reallocating plot height, including on resize.
 

@@ -104,6 +104,14 @@
             }
           },
           "additionalProperties": false
+        },
+        "direction": {
+          "enum": [
+            "both",
+            "positive",
+            "negative"
+          ],
+          "default": "both"
         }
       },
       "additionalProperties": false
